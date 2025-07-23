@@ -300,8 +300,12 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
         logger.info("--> parse_verb_page: Поиск корня и биньяна...")
         data['root'], data['binyan'] = None, None
         for p in main_header.find_next_siblings('p'):
-            if 'глагол' in p.text.lower() and p.find('b'): data['binyan'] = p.find('b').text.strip()
-            if 'корень' in p.text.lower() and p.find('span', class_='menukad'): data['root'] = p.find('span', class_='menukad').text.strip()
+            if 'глагол' in p.text.lower():
+                binyan_tag = p.find('b')
+                if binyan_tag: data['binyan'] = binyan_tag.text.strip()
+            if 'корень' in p.text.lower():
+                root_tag = p.find('span', class_='menukad')
+                if root_tag: data['root'] = root_tag.text.strip()
 
         logger.info("--> parse_verb_page: Поиск спряжений...")
         conjugations = []
@@ -319,7 +323,7 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
         logger.info("-> parse_verb_page завершен успешно.")
         return data
     except Exception as e:
-        logger.error(f"Критическая ошибка в parse_verb_page: {e}", exc_info=True)
+        logger.error(f"Ошибка в parse_verb_page: {e}", exc_info=True)
         return None
 
 def parse_noun_or_adjective_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
@@ -340,7 +344,7 @@ def parse_noun_or_adjective_page(soup: BeautifulSoup, main_header: Tag) -> Optio
                 canonical_hebrew = potential_word
 
         if not canonical_hebrew:
-            logger.error("--> parse_noun_or_adjective_page: не удалось найти каноническую форму ни одним из методов.")
+            logger.error("--> parse_noun_or_adjective_page: Не удалось найти каноническую форму.")
             return None
         data['hebrew'] = canonical_hebrew
         logger.info(f"--> parse_noun_or_adjective_page: Каноническая форма найдена: {data['hebrew']}")
@@ -364,11 +368,11 @@ def parse_noun_or_adjective_page(soup: BeautifulSoup, main_header: Tag) -> Optio
         logger.info("-> parse_noun_or_adjective_page завершен успешно.")
         return data
     except Exception as e:
-        logger.error(f"Критическая ошибка в parse_noun_or_adjective_page: {e}", exc_info=True)
+        logger.error(f"Ошибка в parse_noun_or_adjective_page: {e}", exc_info=True)
         return None
 
 def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str, Any]]]:
-    """Функция-диспетчер парсинга с детальным логированием."""
+    """Функция-диспетчер парсинга. Нормализует и сохраняет данные."""
     is_owner = False
     normalized_search_word = normalize_hebrew(search_word)
     with PARSING_EVENTS_LOCK:
@@ -380,6 +384,7 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
     if not is_owner:
         logger.info(f"Парсинг для '{search_word}' уже запущен, ожидание...")
         event.wait(timeout=PARSING_TIMEOUT)
+        logger.info(f"Ожидание для '{search_word}' завершено, повторный поиск в кэше.")
         result = local_search(normalized_search_word)
         return ('ok', result) if result else ('not_found', None)
 
@@ -445,8 +450,8 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
                 conj['normalized_hebrew_form'] = normalize_hebrew(conj['hebrew_form'])
         
         if local_search(parsed_data['normalized_hebrew']):
-             logger.info(f"Шаг 3.2: Нормализованная форма '{parsed_data['normalized_hebrew']}' уже есть в кэше. Сохранение не требуется.")
-             return 'ok', local_search(parsed_data['normalized_hebrew'])
+            logger.info(f"Шаг 3.2: Нормализованная форма '{parsed_data['normalized_hebrew']}' уже есть в кэше. Сохранение не требуется.")
+            return 'ok', local_search(parsed_data['normalized_hebrew'])
 
         logger.info(f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его нормализованных форм в БД...")
         def _save_word_transaction(cursor: sqlite3.Cursor):
@@ -479,12 +484,15 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, conjugations_to_insert)
         db_transaction(_save_word_transaction)
-        
+        logger.info("Шаг 4.1: Транзакция на запись отправлена в очередь.")
         logger.info("Шаг 5: Ожидание появления слова в БД и возврат результата...")
         final_word_data = None
         for i in range(DB_READ_ATTEMPTS):
+            logger.info(f"Шаг 5.{i+1}: Попытка чтения из БД...")
             final_word_data = local_search(parsed_data['normalized_hebrew'])
-            if final_word_data: break
+            if final_word_data:
+                logger.info("Шаг 5.x: Слово успешно найдено в БД.")
+                break
             time.sleep(DB_READ_DELAY)
         
         if final_word_data:
