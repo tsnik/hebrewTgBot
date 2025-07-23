@@ -439,11 +439,11 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
             logger.info("Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ.")
             parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
+        logger.info("Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга...")
         if not parsed_data:
             logger.error("Парсинг не удался: одна из функций (parse_verb_page/parse_noun_or_adjective_page) вернула None.")
             return 'error', None
-        
-        logger.info(f"Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга для '{parsed_data['hebrew']}'...")
+        logger.info(f"Шаг 3.1: Парсер успешно вернул данные для '{parsed_data['hebrew']}'.")
         parsed_data['normalized_hebrew'] = normalize_hebrew(parsed_data['hebrew'])
         if parsed_data.get('conjugations'):
             for conj in parsed_data['conjugations']:
@@ -480,7 +480,8 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
                     for c in parsed_data['conjugations']
                 ]
                 cursor.executemany("""
-                    INSERT INTO verb_conjugations (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription)
+                    INSERT INTO verb_conjugations 
+                    (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, conjugations_to_insert)
         db_transaction(_save_word_transaction)
@@ -590,6 +591,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not re.match(r'^[\u0590-\u05FF\s-]+$', text):
         await update.message.reply_text("Пожалуйста, используйте только буквы иврита.")
         return
+    if len(text.split()) > 1:
+        await update.message.reply_text("Пожалуйста, отправляйте только по одному слову за раз.")
+        return
 
     normalized_text = normalize_hebrew(text)
     word_data = local_search(normalized_text)
@@ -605,12 +609,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await display_word_card(context, user_id, chat_id, data, message_id=status_message.message_id)
     elif status == 'not_found':
         await context.bot.edit_message_text(f"Слово '{text}' не найдено.", chat_id=chat_id, message_id=status_message.message_id)
-    else:
-        await context.bot.edit_message_text(
-            "Произошла внутренняя ошибка при поиске слова. "
-            "Если проблема повторится, пожалуйста, сообщите администратору.",
-            chat_id=chat_id, message_id=status_message.message_id
-        )
+    elif status == 'error':
+        await context.bot.edit_message_text("Внешний сервис словаря временно недоступен. Попробуйте, пожалуйста, позже.", chat_id=chat_id, message_id=status_message.message_id)
+    elif status == 'db_error':
+        await context.bot.edit_message_text("Произошла внутренняя ошибка при сохранении слова. Пожалуйста, попробуйте позже.", chat_id=chat_id, message_id=status_message.message_id)
 
 async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
