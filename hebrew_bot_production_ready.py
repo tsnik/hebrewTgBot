@@ -2,13 +2,13 @@
 
 """
 Telegram-бот "Помощник по ивриту"
-Версия: 14.4 (Улучшен парсер существительных)
+Версия: 14.5 (Стиль логирования восстановлен)
 Дата обновления: 24 июля 2025 г.
 
 Ключевые изменения в этой версии:
+- REVERT: Восстановлен детальный пошаговый стиль логирования внутри парсеров,
+  как в версии 13.1, для максимальной информативности при отладке.
 - REFACTOR: Улучшен парсер существительных (`parse_noun_or_adjective_page`).
-  Добавлен запасной метод поиска канонической формы слова из <title> страницы
-  (на основе вашего предложения), что повышает надежность парсинга.
 - DEBUG: Добавлено детальное пошаговое логирование в функции парсинга.
 - BUGFIX: Исправлена критическая ошибка '8 values for 7 columns' при сохранении
   нового слова в таблицу cached_words.
@@ -242,31 +242,45 @@ def local_search(normalized_search_word: str) -> Optional[Dict[str, Any]]:
 
 def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
     """Парсер для страниц глаголов с детальным логированием."""
+    logger.info("-> Запущен parse_verb_page.")
     try:
         data = {'is_verb': True}
+
+        logger.info("--> parse_verb_page: Поиск инфинитива...")
         infinitive_div = soup.find('div', id='INF-L')
-        if not infinitive_div or not infinitive_div.find('span', class_='menukad'):
-            logger.warning("parse_verb_page: не найден блок инфинитива ('div' с id='INF-L') или 'span' с классом 'menukad' внутри него.")
+        if not infinitive_div:
+            logger.error("--> parse_verb_page: Не найден блок инфинитива INF-L.")
             return None
-        data['hebrew'] = infinitive_div.find('span', class_='menukad').text.split('~')[0].strip()
-        
+
+        menukad_tag = infinitive_div.find('span', class_='menukad')
+        if not menukad_tag:
+            logger.error("--> parse_verb_page: Не найден тег menukad внутри блока инфинитива.")
+            return None
+        data['hebrew'] = menukad_tag.text.split('~')[0].strip()
+        logger.info(f"--> parse_verb_page: Инфинитив найден: {data['hebrew']}")
+
+        logger.info("--> parse_verb_page: Поиск перевода...")
         lead_div = soup.find('div', class_='lead')
         if not lead_div:
-            logger.warning(f"parse_verb_page для '{data['hebrew']}': не найден 'div' с классом 'lead' (перевод).")
+            logger.error(f"--> parse_verb_page для '{data['hebrew']}': не найден 'div' с классом 'lead' (перевод).")
             return None
         data['translations'] = parse_translations(lead_div.text.strip())
         if not data['translations']:
-            logger.warning(f"parse_verb_page для '{data['hebrew']}': функция parse_translations вернула пустой список.")
+            logger.warning(f"--> parse_verb_page для '{data['hebrew']}': функция parse_translations вернула пустой список.")
             return None
+        logger.info(f"--> parse_verb_page: Переводы найдены.")
 
+        logger.info("--> parse_verb_page: Поиск транскрипции...")
         transcription_div = infinitive_div.find('div', class_='transcription')
         data['transcription'] = transcription_div.text.strip() if transcription_div else ''
         
+        logger.info("--> parse_verb_page: Поиск корня и биньяна...")
         data['root'], data['binyan'] = None, None
         for p in main_header.find_next_siblings('p'):
             if 'глагол' in p.text.lower() and p.find('b'): data['binyan'] = p.find('b').text.strip()
             if 'корень' in p.text.lower() and p.find('span', class_='menukad'): data['root'] = p.find('span', class_='menukad').text.strip()
 
+        logger.info("--> parse_verb_page: Поиск спряжений...")
         conjugations = []
         verb_forms = soup.find_all('div', id=re.compile(r'^(AP|PERF|IMPF|IMP|INF)-'))
         tense_map = {'AP': 'настоящее', 'PERF': 'прошедшее', 'IMPF': 'будущее', 'IMP': 'повелительное', 'INF': 'инфинитив'}
@@ -277,6 +291,9 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
                 person = form_id.split('-')[1] if len(form_id.split('-')) > 1 else "форма"
                 conjugations.append({'tense': tense_map.get(tense_prefix), 'person': person, 'hebrew_form': menukad_tag.text.strip(), 'transcription': trans_tag.text.strip()})
         data['conjugations'] = conjugations
+        logger.info(f"--> parse_verb_page: Найдено {len(conjugations)} форм спряжений.")
+
+        logger.info("-> parse_verb_page завершен успешно.")
         return data
     except Exception as e:
         logger.error(f"Критическая ошибка в parse_verb_page: {e}", exc_info=True)
@@ -284,38 +301,44 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
 
 def parse_noun_or_adjective_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
     """Парсер для страниц существительных и прилагательных с улучшенной логикой."""
+    logger.info("-> Запущен parse_noun_or_adjective_page.")
     try:
         data = {'is_verb': False, 'root': None, 'binyan': None, 'conjugations': []}
         
-        # Улучшенный поиск канонической формы (основной + запасной метод)
+        logger.info("--> parse_noun_or_adjective_page: Поиск канонической формы...")
         canonical_hebrew = None
         canonical_tag = main_header.find('span', class_='menukad')
         if canonical_tag:
             canonical_hebrew = canonical_tag.text.strip()
         elif soup.title and '–' in soup.title.string:
-            logger.info("parse_noun_or_adjective_page: не найден menukad, используется запасной метод (title).")
+            logger.info("--> parse_noun_or_adjective_page: не найден menukad, используется запасной метод (title).")
             potential_word = soup.title.string.split('–')[0].strip()
             if re.match(r'^[\u0590-\u05FF\s-]+$', potential_word):
                 canonical_hebrew = potential_word
 
         if not canonical_hebrew:
-            logger.warning("parse_noun_or_adjective_page: не удалось найти каноническую форму ни одним из методов.")
+            logger.error("--> parse_noun_or_adjective_page: не удалось найти каноническую форму ни одним из методов.")
             return None
         data['hebrew'] = canonical_hebrew
+        logger.info(f"--> parse_noun_or_adjective_page: Каноническая форма найдена: {data['hebrew']}")
         
+        logger.info("--> parse_noun_or_adjective_page: Поиск перевода...")
         lead_div = soup.find('div', class_='lead')
         if not lead_div:
-            logger.warning(f"parse_noun_or_adjective_page для '{data['hebrew']}': не найден 'div' с классом 'lead' (перевод).")
+            logger.error(f"--> parse_noun_or_adjective_page для '{data['hebrew']}': не найден 'div' с классом 'lead' (перевод).")
             return None
         
         data['translations'] = parse_translations(lead_div.text.strip())
         if not data['translations']:
-            logger.warning(f"parse_noun_or_adjective_page для '{data['hebrew']}': функция parse_translations вернула пустой список.")
+            logger.warning(f"--> parse_noun_or_adjective_page для '{data['hebrew']}': функция parse_translations вернула пустой список.")
             return None
+        logger.info(f"--> parse_noun_or_adjective_page: Переводы найдены.")
 
+        logger.info("--> parse_noun_or_adjective_page: Поиск транскрипции...")
         transcription_div = soup.find('div', class_='transcription')
         data['transcription'] = transcription_div.text.strip() if transcription_div else ''
         
+        logger.info("-> parse_noun_or_adjective_page завершен успешно.")
         return data
     except Exception as e:
         logger.error(f"Критическая ошибка в parse_noun_or_adjective_page: {e}", exc_info=True)
