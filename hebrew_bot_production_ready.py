@@ -2,16 +2,17 @@
 
 """
 Telegram-бот "Помощник по ивриту"
-Версия: 14.5 (Стиль логирования восстановлен)
+Версия: 14.6 (Восстановлена логика из v13.1)
 Дата обновления: 24 июля 2025 г.
 
 Ключевые изменения в этой версии:
-- REVERT: Восстановлен детальный пошаговый стиль логирования внутри парсеров,
-  как в версии 13.1, для максимальной информативности при отладке.
+- REVERT: Восстановлена полная версия функции `normalize_hebrew` с логикой
+  приведения к базовой форме, как в v13.1.
+- REFACTOR: В функцию `display_word_card` возвращен параметр `in_dictionary`
+  для более явного управления состоянием.
+- REVERT: Восстановлен детальный пошаговый стиль логирования внутри
+  `fetch_and_cache_word_data` для максимальной информативности.
 - REFACTOR: Улучшен парсер существительных (`parse_noun_or_adjective_page`).
-- DEBUG: Добавлено детальное пошаговое логирование в функции парсинга.
-- BUGFIX: Исправлена критическая ошибка '8 values for 7 columns' при сохранении
-  нового слова в таблицу cached_words.
 """
 
 import logging
@@ -71,11 +72,17 @@ PARSING_EVENTS_LOCK = threading.Lock()
 
 def normalize_hebrew(text: str) -> str:
     """
-    Нормализует текст на иврите: удаляет огласовки (никуд).
+    Нормализует текст на иврите: удаляет огласовки (никуд) и
+    приводит к базовой форме написания.
     """
     if not text:
         return ""
-    return re.sub(r'[\u0591-\u05C7]', '', text).strip()
+    # Удаление всех огласовок (U+0591 до U+05C7)
+    text = re.sub(r'[\u0591-\u05C7]', '', text)
+    # Базовые правила унификации (можно расширять)
+    # text = text.replace('יי', 'י')
+    # text = text.replace('וו', 'ו')
+    return text.strip()
 
 def parse_translations(raw_text: str) -> List[Dict[str, Any]]:
     """
@@ -362,6 +369,7 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
 
     try:
         logger.info(f"--- Начало парсинга для '{search_word}' ---")
+        logger.info("Шаг 1: Выполнение HTTP-запроса...")
         try:
             search_url = f"https://www.pealim.com/ru/search/?q={quote(search_word)}"
             session = requests.Session()
@@ -369,9 +377,13 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
             session.headers.update(headers)
             search_response = session.get(search_url, timeout=10)
             search_response.raise_for_status()
+            logger.info(f"Шаг 1.1: Успешно получен ответ от {search_url}")
+            
             if "/dict/" in search_response.url:
                 response = search_response
+                logger.info("Шаг 1.2: Прямое перенаправление на словарную статью.")
             else:
+                logger.info("Шаг 1.2: Ответ - страница поиска, ищем нужную ссылку...")
                 search_soup = BeautifulSoup(search_response.text, 'html.parser')
                 results_container = search_soup.find('div', class_='results-by-verb') or search_soup.find('div', class_='results-by-meaning')
                 if not results_container:
@@ -382,13 +394,17 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
                     logger.warning(f"Не найдено ссылки на словарную статью для '{search_word}'.")
                     return 'not_found', None
                 final_url = urljoin(search_response.url, result_link['href'])
+                logger.info(f"Шаг 1.3: Найдена ссылка, переход на {final_url}")
                 response = session.get(final_url, timeout=10)
                 response.raise_for_status()
         except requests.RequestException as e:
             logger.error(f"Сетевая ошибка при запросе к pealim.com: {e}", exc_info=True)
             return 'error', None
         
+        logger.info("Шаг 1.4: Финальная страница успешно загружена.")
         soup = BeautifulSoup(response.text, 'html.parser')
+        
+        logger.info("Шаг 2: Определение типа страницы...")
         main_header = soup.find('h2', class_='page-header')
         if not main_header:
             logger.error("Парсинг не удался: не найден 'h2' с классом 'page-header'.")
@@ -396,24 +412,27 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
 
         parsed_data = None
         if "спряжение" in main_header.text.lower():
-            logger.info("Страница определена как ГЛАГОЛ. Запуск parse_verb_page...")
+            logger.info("Шаг 2.1: Страница определена как ГЛАГОЛ.")
             parsed_data = parse_verb_page(soup, main_header)
         else:
-            logger.info("Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ. Запуск parse_noun_or_adjective_page...")
+            logger.info("Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ.")
             parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
         if not parsed_data:
             logger.error("Парсинг не удался: одна из функций (parse_verb_page/parse_noun_or_adjective_page) вернула None.")
             return 'error', None
         
+        logger.info(f"Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга для '{parsed_data['hebrew']}'...")
         parsed_data['normalized_hebrew'] = normalize_hebrew(parsed_data['hebrew'])
         if parsed_data.get('conjugations'):
             for conj in parsed_data['conjugations']:
                 conj['normalized_hebrew_form'] = normalize_hebrew(conj['hebrew_form'])
         
         if local_search(parsed_data['normalized_hebrew']):
-            return 'ok', local_search(parsed_data['normalized_hebrew'])
+             logger.info(f"Шаг 3.2: Нормализованная форма '{parsed_data['normalized_hebrew']}' уже есть в кэше. Сохранение не требуется.")
+             return 'ok', local_search(parsed_data['normalized_hebrew'])
 
+        logger.info(f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его нормализованных форм в БД...")
         def _save_word_transaction(cursor: sqlite3.Cursor):
             cursor.execute("""
                 INSERT INTO cached_words (hebrew, normalized_hebrew, transcription, is_verb, root, binyan, fetched_at)
@@ -445,6 +464,7 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
                 """, conjugations_to_insert)
         db_transaction(_save_word_transaction)
         
+        logger.info("Шаг 5: Ожидание появления слова в БД и возврат результата...")
         final_word_data = None
         for i in range(DB_READ_ATTEMPTS):
             final_word_data = local_search(parsed_data['normalized_hebrew'])
@@ -452,15 +472,17 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
             time.sleep(DB_READ_DELAY)
         
         if final_word_data:
+            logger.info(f"--- Парсинг для '{search_word}' завершен УСПЕШНО. ---")
             return ('ok', final_word_data)
         else:
-            logger.error(f"Ошибка БД: не удалось прочитать запись для '{parsed_data['hebrew']}' после сохранения.")
+            logger.error(f"--- Парсинг для '{search_word}' завершен с ОШИБКОЙ БД (не удалось прочитать запись). ---")
             return ('db_error', None)
             
     except Exception as e:
         logger.error(f"Критическая ошибка в fetch_and_cache_word_data: {e}", exc_info=True)
         return 'error', None
     finally:
+        logger.info(f"Шаг 6: Очистка для '{search_word}'.")
         with PARSING_EVENTS_LOCK:
             if normalized_search_word in PARSING_EVENTS:
                 PARSING_EVENTS[normalized_search_word].set()
@@ -492,11 +514,14 @@ async def display_word_card(
     user_id: int,
     chat_id: int,
     word_data: dict,
-    message_id: Optional[int] = None
+    message_id: Optional[int] = None,
+    in_dictionary: Optional[bool] = None
 ):
     """Отображает карточку слова с множественными переводами."""
     word_id = word_data['word_id']
-    in_dictionary = db_read_query("SELECT 1 FROM user_dictionary WHERE user_id = ? AND word_id = ?", (user_id, word_id), fetchone=True)
+    
+    if in_dictionary is None:
+        in_dictionary = db_read_query("SELECT 1 FROM user_dictionary WHERE user_id = ? AND word_id = ?", (user_id, word_id), fetchone=True)
     
     translations = word_data.get('translations', [])
     primary_translation = next((t['translation_text'] for t in translations if t['is_primary']), "Перевод не найден")
@@ -573,7 +598,7 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
     if word_data_row:
         word_data = local_search(word_data_row['normalized_hebrew'])
         if word_data:
-            await display_word_card(context, user_id, query.message.chat_id, word_data, message_id=query.message.message_id)
+            await display_word_card(context, user_id, query.message.chat_id, word_data, message_id=query.message.message_id, in_dictionary=True)
 
 async def view_dictionary_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
