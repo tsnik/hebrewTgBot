@@ -117,10 +117,12 @@ def parse_translations(raw_text: str) -> List[Dict[str, Any]]:
     return all_translations
 
 
-# --- УПРАВЛЕНИЕ БАЗОЙ ДАННЫХ ---
+# --- УПРАВЛЕНИЕ БАЗОЙ ДАННЫХ (С ПОДДЕРЖКОЙ ТРАНЗАКЦИЙ) ---
 
 def db_worker():
-    """Worker, который последовательно выполняет запросы на запись в БД."""
+    """
+    Worker, который последовательно выполняет запросы на запись в БД.
+    """
     os.makedirs(os.path.dirname(DB_NAME), exist_ok=True)
     conn = sqlite3.connect(DB_NAME, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -146,12 +148,15 @@ def db_worker():
             logger.error(f"DB-WORKER: Критическая ошибка: {e}", exc_info=True)
 
 def db_write_query(query, params=(), many=False):
+    """Помещает одиночный запрос на запись в очередь."""
     DB_WRITE_QUEUE.put((query, params, many))
 
 def db_transaction(func: Callable[[sqlite3.Cursor], None]):
+    """Помещает функцию для выполнения внутри транзакции."""
     DB_WRITE_QUEUE.put(func)
 
 def db_read_query(query, params=(), fetchone=False, fetchall=False):
+    """Выполняет запрос на чтение и возвращает результат."""
     try:
         conn = sqlite3.connect(DB_NAME, timeout=10, check_same_thread=False)
         conn.row_factory = sqlite3.Row
@@ -216,6 +221,7 @@ def init_db():
             FOREIGN KEY (word_id) REFERENCES cached_words (word_id) ON DELETE CASCADE
         )
     """)
+    # Индексы для нормализованных полей
     db_write_query("CREATE INDEX IF NOT EXISTS idx_normalized_hebrew ON cached_words(normalized_hebrew)")
     db_write_query("CREATE INDEX IF NOT EXISTS idx_normalized_hebrew_form ON verb_conjugations(normalized_hebrew_form)")
     db_write_query("CREATE INDEX IF NOT EXISTS idx_translations_word_id ON translations(word_id)")
@@ -224,13 +230,23 @@ def init_db():
 # --- МОДУЛЬНАЯ АРХИТЕКТУРА ПАРСЕРА ---
 
 def local_search(normalized_search_word: str) -> Optional[Dict[str, Any]]:
-    """Ищет слово в локальной базе данных по НОРМАЛИЗОВАННОЙ форме."""
+    """
+    Ищет слово в локальной базе данных по НОРМАЛИЗОВАННОЙ форме.
+    Сначала ищет в формах глаголов, затем в канонических формах.
+    """
     word_id = None
-    conjugation = db_read_query("SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?", (normalized_search_word,), fetchone=True)
+    # 1. Поиск по формам глаголов
+    conjugation = db_read_query(
+        "SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?",
+        (normalized_search_word,),
+        fetchone=True
+    )
     if conjugation:
         word_id = conjugation['word_id']
     else:
-        word_data_row = db_read_query("SELECT word_id FROM cached_words WHERE normalized_hebrew = ?", (normalized_search_word,), fetchone=True)
+    # 2. Поиск по каноническим формам
+        word_data_row = db_read_query("SELECT word_id FROM cached_words WHERE normalized_hebrew = ?", 
+        (normalized_search_word,), fetchone=True)
         if word_data_row:
             word_id = word_data_row['word_id']
 
@@ -248,7 +264,7 @@ def local_search(normalized_search_word: str) -> Optional[Dict[str, Any]]:
     return result
 
 def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
-    """Парсер для страниц глаголов с детальным логированием."""
+    """Парсер для страниц глаголов"""
     logger.info("-> Запущен parse_verb_page.")
     try:
         data = {'is_verb': True}
