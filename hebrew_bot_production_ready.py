@@ -2,24 +2,21 @@
 
 """
 Telegram-бот "Помощник по ивриту"
-Версия: 13.0 (Реализована нормализация иврита)
+Версия: 13.1 (Исправлена ошибка в тренажере глаголов)
 Дата обновления: 23 июля 2025 г.
 
 Ключевые изменения в этой версии:
+- BUGFIX: Исправлена ошибка в тренажере глаголов, из-за которой кнопка "Продолжить"
+  не запускала следующий вопрос. Логика ConversationHandler была переработана
+  для корректного перехода между состояниями без завершения диалога.
 - NEW FEATURE: Реализована система нормализации текста на иврите в соответствии
   с системными требованиями v12.
--   - Добавлена функция `normalize_hebrew` для удаления огласовок (никуд)
-      и унификации написания букв 'ו' и 'י'.
+-   - Добавлена функция `normalize_hebrew` для удаления огласовок (никуд).
 - DB SCHEMA: Модифицирована схема БД:
 -   - В таблицу `cached_words` добавлено поле `normalized_hebrew`.
 -   - В таблицу `verb_conjugations` добавлено поле `normalized_hebrew_form`.
 -   - Добавлены индексы для новых полей для ускорения поиска.
-- REFACTOR: Переработана логика поиска и сохранения слов:
--   - `local_search` теперь ищет по нормализованным полям.
--   - `fetch_and_cache_word_data` теперь сохраняет как оригинальные,
-      так и нормализованные формы слов и спряжений.
--   - Основной обработчик `handle_text_message` и тренажер глаголов
-      `check_verb_answer` теперь используют нормализацию для сравнения.
+- REFACTOR: Переработана логика поиска и сохранения слов.
 """
 
 import logging
@@ -87,7 +84,6 @@ def normalize_hebrew(text: str) -> str:
     # Удаление всех огласовок (U+0591 до U+05C7)
     text = re.sub(r'[\u0591-\u05C7]', '', text)
     # Базовые правила унификации (можно расширять)
-    # Например, в некоторых случаях можно унифицировать 'יי' в 'י'
     # text = text.replace('יי', 'י')
     # text = text.replace('וו', 'ו')
     return text.strip()
@@ -332,7 +328,6 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
 
         logger.info("Шаг 1: Выполнение HTTP-запроса...")
         try:
-            # Используем оригинальное слово для поиска на сайте
             search_url = f"https://www.pealim.com/ru/search/?q={quote(search_word)}"
             session = requests.Session()
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'}
@@ -378,12 +373,10 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
         if not parsed_data: return 'error', None
         logger.info(f"Шаг 3.1: Парсер успешно вернул данные для '{parsed_data['hebrew']}'.")
 
-        # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: НОРМАЛИЗАЦИЯ ---
         parsed_data['normalized_hebrew'] = normalize_hebrew(parsed_data['hebrew'])
         if parsed_data.get('conjugations'):
             for conj in parsed_data['conjugations']:
                 conj['normalized_hebrew_form'] = normalize_hebrew(conj['hebrew_form'])
-        # ----------------------------------------
 
         if local_search(parsed_data['normalized_hebrew']):
             logger.info(f"Шаг 3.2: Нормализованная форма '{parsed_data['normalized_hebrew']}' уже есть в кэше. Сохранение не требуется.")
@@ -445,7 +438,7 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
                 del PARSING_EVENTS[normalized_search_word]
 
 # --- КОЛЛБЭК-ДАННЫЕ И СОСТОЯНИЯ ---
-TRAINING_MENU_STATE, FLASHCARD_SHOW, FLASHCARD_EVAL, AWAITING_VERB_ANSWER = range(4)
+TRAINING_MENU_STATE, FLASHCARD_SHOW, FLASHCARD_EVAL, AWAITING_VERB_ANSWER, VERB_TRAINER_NEXT_ACTION = range(5)
 CB_DICT_VIEW, CB_DICT_DELETE_MODE, CB_DICT_CONFIRM_DELETE, CB_DICT_EXECUTE_DELETE = "d_v", "d_dm", "d_cd", "d_ed"
 CB_ADD, CB_SHOW_VERB, CB_VIEW_CARD = "add", "sh_v", "v_c"
 CB_TRAIN_MENU, CB_TRAIN_HE_RU, CB_TRAIN_RU_HE, CB_VERB_TRAINER_START = "t_m", "t_hr", "t_rh", "vts"
@@ -518,18 +511,15 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Пожалуйста, отправляйте только по одному слову за раз.")
         return
 
-    # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: НОРМАЛИЗАЦИЯ ВВОДА ---
     normalized_text = normalize_hebrew(text)
     word_data = local_search(normalized_text)
-    # ---------------------------------------------
 
     if word_data:
         await display_word_card(context, user_id, chat_id, word_data)
         return
 
     status_message = await update.message.reply_text("🔎 Ищу слово во внешнем словаре...")
-
-    # Для парсинга используется оригинальное слово
+    
     status, data = await asyncio.to_thread(fetch_and_cache_word_data, text)
 
     if status == 'ok' and data:
@@ -549,14 +539,13 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
     message_id = query.message.message_id
 
     db_write_query("INSERT OR IGNORE INTO user_dictionary (user_id, word_id, next_review_at) VALUES (?, ?, ?)", (user_id, word_id, datetime.now()))
-
+    
     await query.answer("Добавлено!")
 
     word_data = db_read_query("SELECT * FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
     if word_data:
         await display_word_card(context, user_id, chat_id, dict(word_data), message_id=message_id, in_dictionary=True)
 
-# ... (остальные хендлеры словаря остаются без изменений) ...
 async def view_dictionary_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -568,11 +557,11 @@ async def view_dictionary_page_handler(update: Update, context: ContextTypes.DEF
 async def view_dictionary_page_logic(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int, deletion_mode: bool, exclude_word_id: Optional[int] = None):
     query = update.callback_query
     user_id = query.from_user.id
-
+    
     words_from_db = db_read_query("SELECT cw.word_id, cw.hebrew, cw.translation FROM cached_words cw JOIN user_dictionary ud ON cw.word_id = ud.word_id WHERE ud.user_id = ? ORDER BY ud.added_at DESC LIMIT 6 OFFSET ?", (user_id, page * 5), fetchall=True)
-
+    
     words = [w for w in words_from_db if w['word_id'] != exclude_word_id] if exclude_word_id else words_from_db
-
+    
     has_next_page = len(words) > 5
     words = words[:5]
 
@@ -589,19 +578,19 @@ async def view_dictionary_page_logic(update: Update, context: ContextTypes.DEFAU
             keyboard.append([InlineKeyboardButton(f"🗑️ {word['hebrew']}", callback_data=f"{CB_DICT_CONFIRM_DELETE}_{word['word_id']}_{page}")])
         else:
             message_text += f"• {word['hebrew']} — {word['translation']}\n"
-
+    
     nav_buttons = []
     nav_pattern = CB_DICT_DELETE_MODE if deletion_mode else CB_DICT_VIEW
     if page > 0: nav_buttons.append(InlineKeyboardButton("◀️", callback_data=f"{nav_pattern}_{page-1}"))
     if has_next_page: nav_buttons.append(InlineKeyboardButton("▶️", callback_data=f"{nav_pattern}_{page+1}"))
     if nav_buttons: keyboard.append(nav_buttons)
-
+    
     if deletion_mode:
         keyboard.append([InlineKeyboardButton("⬅️ К словарю", callback_data=f"{CB_DICT_VIEW}_{page}")])
     else:
         keyboard.append([InlineKeyboardButton("🗑️ Удалить слово", callback_data=f"{CB_DICT_DELETE_MODE}_0")])
         keyboard.append([InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")])
-
+    
     await query.edit_message_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -621,16 +610,25 @@ async def execute_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer("Слово удалено")
     _, _, word_id_str, page_str = query.data.split('_')
     word_id, page = int(word_id_str), int(page_str)
-
+    
     db_write_query("DELETE FROM user_dictionary WHERE user_id = ? AND word_id = ?", (query.from_user.id, word_id))
-
+    
     await view_dictionary_page_logic(update, context, page=page, deletion_mode=False, exclude_word_id=word_id)
 
 async def training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    if query: await query.answer()
-    keyboard = [[InlineKeyboardButton("🇮🇱 → 🇷🇺", callback_data=CB_TRAIN_HE_RU)], [InlineKeyboardButton("🇷🇺 → 🇮🇱", callback_data=CB_TRAIN_RU_HE)], [InlineKeyboardButton("🔥 Глаголы", callback_data=CB_VERB_TRAINER_START)], [InlineKeyboardButton("⬅️ В меню", callback_data="main_menu")]]
-    await (query.edit_message_text if query else update.message.reply_text)("Выберите режим тренировки:", reply_markup=InlineKeyboardMarkup(keyboard))
+    if query: 
+        await query.answer()
+        # При возврате в меню тренировок, редактируем сообщение
+        await query.edit_message_text(
+            "Выберите режим тренировки:", 
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🇮🇱 → 🇷🇺", callback_data=CB_TRAIN_HE_RU)], 
+                [InlineKeyboardButton("🇷🇺 → 🇮🇱", callback_data=CB_TRAIN_RU_HE)], 
+                [InlineKeyboardButton("🔥 Глаголы", callback_data=CB_VERB_TRAINER_START)], 
+                [InlineKeyboardButton("⬅️ В меню", callback_data="main_menu")]
+            ])
+        )
     return TRAINING_MENU_STATE
 
 async def start_flashcard_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -654,15 +652,13 @@ async def show_next_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     word = words[idx]
     question = word['hebrew'] if context.user_data['training_mode'] == CB_TRAIN_HE_RU else word['translation']
     keyboard = [[InlineKeyboardButton("💡 Ответ", callback_data=CB_SHOW_ANSWER)], [InlineKeyboardButton("❌ Закончить", callback_data=CB_END_TRAINING)]]
-
+    
     message_text = f"Слово {idx+1}/{len(words)}:\n\n*{question}*"
     reply_markup = InlineKeyboardMarkup(keyboard)
-
+    
     if query:
         await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
-    else: # Should not happen in this flow, but as a fallback
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=message_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
-
+    
     return FLASHCARD_SHOW
 
 async def show_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -691,7 +687,7 @@ async def handle_self_evaluation(update: Update, context: ContextTypes.DEFAULT_T
 async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
+    
     user_id = query.from_user.id
     verb, conjugation = None, None
 
@@ -699,7 +695,7 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         verb_candidate = db_read_query("SELECT cw.* FROM cached_words cw JOIN user_dictionary ud ON cw.word_id = ud.word_id WHERE ud.user_id = ? AND cw.is_verb = 1 ORDER BY RANDOM() LIMIT 1", (user_id,), fetchone=True)
         if not verb_candidate:
             await query.edit_message_text("В вашем словаре нет глаголов для тренировки.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data=CB_TRAIN_MENU)]]))
-            return ConversationHandler.END
+            return TRAINING_MENU_STATE
 
         conjugation_candidate = db_read_query("SELECT * FROM verb_conjugations WHERE word_id = ? ORDER BY RANDOM() LIMIT 1", (verb_candidate['word_id'],), fetchone=True)
         if conjugation_candidate:
@@ -710,21 +706,17 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if not verb or not conjugation:
         await query.edit_message_text("Возникла проблема с данными для тренировки.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data=CB_TRAIN_MENU)]]))
-        return ConversationHandler.END
+        return TRAINING_MENU_STATE
 
-    # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: СОХРАНЕНИЕ ОТВЕТА ДЛЯ ПРОВЕРКИ ---
     context.user_data['answer'] = dict(conjugation)
-    # Сохраняем и нормализованную форму для сравнения
     context.user_data['answer']['normalized_hebrew_form'] = normalize_hebrew(conjugation['hebrew_form'])
-    # ---------------------------------------------------------
-
+    
     await query.edit_message_text(f"Глагол: *{verb['hebrew']}*\nНапишите форму для: *{conjugation['tense']}, {conjugation['person']}*", parse_mode=ParseMode.MARKDOWN)
     return AWAITING_VERB_ANSWER
 
 async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     correct = context.user_data['answer']
-
-    # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: СРАВНЕНИЕ НОРМАЛИЗОВАННЫХ ФОРМ ---
+    
     normalized_user_answer = normalize_hebrew(update.message.text)
     correct_normalized_form = correct['normalized_hebrew_form']
 
@@ -732,12 +724,13 @@ async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Верно! *{correct['hebrew_form']}*", parse_mode=ParseMode.MARKDOWN)
     else:
         await update.message.reply_text(f"❌ Неверно. Правильно: *{correct['hebrew_form']}*", parse_mode=ParseMode.MARKDOWN)
-    # ---------------------------------------------------------
-
+    
     db_write_query("UPDATE user_dictionary SET next_review_at = ? WHERE user_id = ? AND word_id = ?", (datetime.now() + timedelta(days=1), update.effective_user.id, correct['word_id']))
+    
     keyboard = [[InlineKeyboardButton("🔥 Продолжить", callback_data=CB_VERB_TRAINER_START)], [InlineKeyboardButton("⬅️ В меню", callback_data=CB_TRAIN_MENU)]]
     await update.message.reply_text("Что дальше?", reply_markup=InlineKeyboardMarkup(keyboard))
-    return ConversationHandler.END
+    
+    return VERB_TRAINER_NEXT_ACTION
 
 async def end_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -756,26 +749,26 @@ async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_T
     word_id = int(query.data.split('_')[-1])
     word_info = db_read_query("SELECT hebrew FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
     conjugations_raw = db_read_query("SELECT tense, person, hebrew_form, transcription FROM verb_conjugations WHERE word_id = ? ORDER BY id", (word_id,), fetchall=True)
-
+    
     keyboard = [[InlineKeyboardButton("⬅️ Назад к слову", callback_data=f"{CB_VIEW_CARD}_{word_id}")]]
 
     if not conjugations_raw or not word_info:
         await query.edit_message_text("Для этого глагола нет таблицы спряжений.", reply_markup=InlineKeyboardMarkup(keyboard))
         return
-
+        
     conjugations_by_tense = {}
     message_text = f"Спряжения для *{word_info['hebrew']}*:\n"
-
+    
     for conj in conjugations_raw:
         if conj['tense'] not in conjugations_by_tense: conjugations_by_tense[conj['tense']] = []
         conjugations_by_tense[conj['tense']].append(conj)
-
+        
     for tense, conjugations in conjugations_by_tense.items():
         message_text += f"\n*{tense.capitalize()}*:\n"
         for conj in conjugations: message_text += f"_{conj['person']}_: {conj['hebrew_form']} ({conj['transcription']})\n"
-
+            
     if len(message_text) > 4096: message_text = message_text[:4090] + "\n(...)"
-
+    
     await query.edit_message_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
 async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -786,7 +779,7 @@ async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     message_id = query.message.message_id
-
+    
     word_data = db_read_query("SELECT * FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
     if word_data:
         await display_word_card(context, user_id, chat_id, dict(word_data), message_id=message_id)
@@ -802,7 +795,7 @@ def main() -> None:
     db_worker_thread = threading.Thread(target=db_worker, daemon=True)
     db_worker_thread.start()
     init_db()
-
+    
     application = Application.builder().token(BOT_TOKEN).build()
 
     conv_defaults = {"per_user": True, "per_chat": True, "conversation_timeout": CONVERSATION_TIMEOUT_SECONDS}
@@ -825,11 +818,14 @@ def main() -> None:
             AWAITING_VERB_ANSWER: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, check_verb_answer)
             ],
+            VERB_TRAINER_NEXT_ACTION: [
+                CallbackQueryHandler(start_verb_trainer, pattern=f"^{CB_VERB_TRAINER_START}$"),
+                CallbackQueryHandler(training_menu, pattern=f"^{CB_TRAIN_MENU}$")
+            ]
         },
         fallbacks=[
             CallbackQueryHandler(end_training, pattern=f"^{CB_END_TRAINING}$"),
             CallbackQueryHandler(back_to_main_menu, pattern="^main_menu$"),
-            CallbackQueryHandler(training_menu, pattern=f"^{CB_TRAIN_MENU}$")
         ],
         map_to_parent={
             ConversationHandler.END: TRAINING_MENU_STATE
@@ -850,7 +846,7 @@ def main() -> None:
 
     logger.info("Бот запускается...")
     application.run_polling()
-
+    
     DB_WRITE_QUEUE.put(None)
     db_worker_thread.join()
 
