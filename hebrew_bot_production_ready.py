@@ -589,7 +589,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id = update.effective_chat.id
 
     if not re.match(r'^[\u0590-\u05FF\s-]+$', text):
-        await update.message.reply_text("Пожалуйста, используйте только буквы иврита.")
+        await update.message.reply_text("Пожалуйста, используйте только буквы иврита, пробелы и дефисы.")
         return
     if len(text.split()) > 1:
         await update.message.reply_text("Пожалуйста, отправляйте только по одному слову за раз.")
@@ -710,6 +710,7 @@ async def training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if query: 
         await query.answer()
+        # При возврате в меню тренировок, редактируем сообщение
         await query.edit_message_text(
             "Выберите режим тренировки:", 
             reply_markup=InlineKeyboardMarkup([
@@ -802,7 +803,7 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
             verb, conjugation = verb_candidate, conjugation_candidate
             break
         else:
-            logger.warning(f"Ошибка целостности данных: у глагола {verb_candidate['hebrew']} (id: {verb_candidate['word_id']}) нет спряжений.")
+            logger.warning(f"Ошибка целостности данных: у глагола {verb_candidate['hebrew']} (id: {verb_candidate['word_id']}) нет спряжений. Попытка {i+1}/{VERB_TRAINER_RETRY_ATTEMPTS}")
 
     if not verb or not conjugation:
         await query.edit_message_text("Возникла проблема с данными для тренировки.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data=CB_TRAIN_MENU)]]))
@@ -882,7 +883,7 @@ async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     word_data = db_read_query("SELECT * FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
     if word_data:
-        await display_word_card(context, user_id, chat_id, dict(word_data), message_id=message_id) 
+        await display_word_card(context, user_id, chat_id, dict(word_data), message_id=message_id)
     else:
         await query.edit_message_text("Ошибка: слово не найдено.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]]))
 
