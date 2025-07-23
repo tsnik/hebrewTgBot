@@ -264,7 +264,7 @@ def local_search(normalized_search_word: str) -> Optional[Dict[str, Any]]:
     return result
 
 def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
-    """Парсер для страниц глаголов"""
+    """Парсер для страниц глаголов."""
     logger.info("-> Запущен parse_verb_page.")
     try:
         data = {'is_verb': True}
@@ -323,7 +323,7 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
         return None
 
 def parse_noun_or_adjective_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
-    """Парсер для страниц существительных и прилагательных с улучшенной логикой."""
+    """Парсер для страниц существительных и прилагательных."""
     logger.info("-> Запущен parse_noun_or_adjective_page.")
     try:
         data = {'is_verb': False, 'root': None, 'binyan': None, 'conjugations': []}
@@ -533,7 +533,10 @@ async def display_word_card(
     message_id: Optional[int] = None,
     in_dictionary: Optional[bool] = None
 ):
-    """Отображает карточку слова с множественными переводами."""
+    """
+    Отображает карточку слова. Редактирует существующее сообщение, если
+    передан message_id, иначе отправляет новое.
+    """
     word_id = word_data['word_id']
     
     if in_dictionary is None:
@@ -859,16 +862,17 @@ async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
 async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик для отображения карточки слова по его ID."""
     query = update.callback_query
     await query.answer()
     word_id = int(query.data.split('_')[-1])
     user_id = query.from_user.id
+    chat_id = query.message.chat_id
+    message_id = query.message.message_id
     
-    word_data_row = db_read_query("SELECT normalized_hebrew FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
-    if word_data_row:
-        word_data = local_search(word_data_row['normalized_hebrew'])
-        if word_data:
-            await display_word_card(context, user_id, query.message.chat_id, word_data, message_id=query.message.message_id)
+    word_data = db_read_query("SELECT * FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
+    if word_data:
+        await display_word_card(context, user_id, chat_id, dict(word_data), message_id=message_id) 
     else:
         await query.edit_message_text("Ошибка: слово не найдено.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]]))
 
