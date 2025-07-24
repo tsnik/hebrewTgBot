@@ -56,7 +56,7 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer("Добавлено!")
     
-    word_id = int(query.data.split('_')[1])
+    word_id = int(query.data.split(':')[2])
     user_id = query.from_user.id
     
     db_write_query(
@@ -68,7 +68,6 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
     if word_data_row:
         word_data = local_search(word_data_row['normalized_hebrew'])
         if word_data:
-            # --- НАЧАЛО ИЗМЕНЕНИЯ ---
             # Передаем in_dictionary=True, чтобы функция знала, что слово уже добавлено
             await display_word_card(
                 context,
@@ -78,7 +77,6 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
                 message_id=query.message.message_id,
                 in_dictionary=True
             )
-            # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
 
 async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -86,11 +84,11 @@ async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
     
-    word_id = int(query.data.split('_')[-1])
+    word_id = int(query.data.split(':')[-1])
     word_info = db_read_query("SELECT hebrew FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
     conjugations_raw = db_read_query("SELECT tense, person, hebrew_form, transcription FROM verb_conjugations WHERE word_id = ? ORDER BY id", (word_id,), fetchall=True)
     
-    keyboard = [[InlineKeyboardButton("⬅️ Назад к слову", callback_data=f"{CB_VIEW_CARD}_{word_id}")]]
+    keyboard = [[InlineKeyboardButton("⬅️ Назад к слову", callback_data=f"{CB_VIEW_CARD}:{word_id}")]]
 
     if not conjugations_raw or not word_info:
         await query.edit_message_text("Для этого глагола нет таблицы спряжений.", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -120,7 +118,7 @@ async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
     
-    word_id = int(query.data.split('_')[-1])
+    word_id = int(query.data.split(':')[-1])
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     message_id = query.message.message_id
