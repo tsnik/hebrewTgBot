@@ -19,13 +19,11 @@ async def view_dictionary_page_handler(update: Update, context: ContextTypes.DEF
     query = update.callback_query
     await query.answer()
     
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: парсинг через ':' ---
     parts = query.data.split(':')
     action = f"{parts[0]}:{parts[1]}" # e.g., "dict:view"
     page = int(parts[2])
     # Определяем, был ли включен режим удаления
     deletion_mode = action == CB_DICT_DELETE_MODE
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
     await view_dictionary_page_logic(update, context, page=page, deletion_mode=deletion_mode)
 
@@ -43,7 +41,6 @@ async def view_dictionary_page_logic(
     query = update.callback_query
     user_id = query.from_user.id
     
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: использование константы вместо "магических чисел" ---
     # Запрос для получения (N+1) слов, чтобы определить, есть ли следующая страница
     limit = DICT_WORDS_PER_PAGE + 1
     offset = page * DICT_WORDS_PER_PAGE
@@ -57,7 +54,6 @@ async def view_dictionary_page_logic(
         LIMIT ? OFFSET ?
     """
     words_from_db = db_read_query(sql_query, (user_id, limit, offset), fetchall=True)
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
     # Если мы только что удалили слово, убираем его из списка
     words = [w for w in words_from_db if w['word_id'] != exclude_word_id] if exclude_word_id else words_from_db
