@@ -222,7 +222,7 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
             return 'ok', result.dict() if result else None
 
         logger.info(f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его форм в БД...")
-        new_word_id = word_repo.create_cached_word(
+        word_repo.create_cached_word(
             hebrew=parsed_data['hebrew'],
             normalized_hebrew=parsed_data['normalized_hebrew'],
             transcription=parsed_data.get('transcription'),
@@ -232,19 +232,23 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
             translations=parsed_data.get('translations', []),
             conjugations=parsed_data.get('conjugations', [])
         )
-        
-        if not new_word_id:
-            logger.error(f"--- Парсинг для '{search_word}' завершен с ОШИБКОЙ БД (не удалось создать запись). ---")
-            return 'db_error', None
 
         logger.info("Шаг 5: Ожидание появления слова в БД и возврат результата...")
-        final_word_data = word_repo.get_word_by_id(new_word_id)
-        
+        final_word_data = None
+        # Пытаемся несколько раз найти слово в БД, ожидая его сохранения
+        for _ in range(DB_READ_ATTEMPTS):
+            await asyncio.sleep(DB_READ_DELAY) # Асинхронное ожидание
+            result = word_repo.find_word_by_normalized_form(parsed_data['normalized_hebrew'])
+            if result:
+                final_word_data = result
+                logger.info("Шаг 5.x: Слово успешно найдено в БД.")
+                break
+
         if final_word_data:
             logger.info(f"--- Парсинг для '{search_word}' завершен УСПЕШНО. ---")
             return 'ok', final_word_data.dict()
         else:
-            logger.error(f"--- Парсинг для '{search_word}' завершен с ОШИБКОЙ БД (не удалось прочитать запись). ---")
+            logger.error(f"--- Парсинг для '{search_word}' завершен с ОШИБКОЙ БД (не удалось прочитать запись после сохранения). ---")
             return 'db_error', None
             
     except Exception as e:
