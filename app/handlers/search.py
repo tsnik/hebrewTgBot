@@ -39,7 +39,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     status_message = await update.message.reply_text("🔎 Ищу слово во внешнем словаре...")
     
-    status, data = await asyncio.to_thread(fetch_and_cache_word_data, text)
+    status, data = await fetch_and_cache_word_data(text)
 
     if status == 'ok' and data:
         await display_word_card(context, user_id, chat_id, data, message_id=status_message.message_id)

@@ -3,13 +3,13 @@
 import logging
 import re
 import sqlite3
-import threading
+import asyncio
 import time
 from datetime import datetime
 from typing import Tuple, Optional, Dict, Any, List
 from urllib.parse import quote, urljoin
 
-import requests
+import httpx
 from bs4 import BeautifulSoup, Tag
 
 from config import logger, PARSING_TIMEOUT
@@ -17,8 +17,8 @@ from services.database import local_search, db_transaction, db_read_query, DB_RE
 from utils import normalize_hebrew, parse_translations
 
 # --- УПРАВЛЕНИЕ КОНКУРЕНТНЫМ ПАРСИНГОМ ---
-PARSING_EVENTS: Dict[str, threading.Event] = {}
-PARSING_EVENTS_LOCK = threading.Lock()
+PARSING_EVENTS: Dict[str, asyncio.Event] = {}
+PARSING_EVENTS_LOCK = asyncio.Lock()
 
 
 def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
@@ -129,60 +129,62 @@ def parse_noun_or_adjective_page(soup: BeautifulSoup, main_header: Tag) -> Optio
         logger.error(f"Ошибка в parse_noun_or_adjective_page: {e}", exc_info=True)
         return None
 
-def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
-    Функция-диспетчер парсинга. Нормализует, ищет, парсит и сохраняет данные.
-    Выполняется в отдельном потоке, чтобы не блокировать асинхронный цикл бота.
+    Асинхронная функция-диспетчер парсинга. Нормализует, ищет, парсит и сохраняет данные.
     """
-    is_owner = False
     normalized_search_word = normalize_hebrew(search_word)
-    with PARSING_EVENTS_LOCK:
+    async with PARSING_EVENTS_LOCK:
         if normalized_search_word not in PARSING_EVENTS:
-            PARSING_EVENTS[normalized_search_word] = threading.Event()
+            PARSING_EVENTS[normalized_search_word] = asyncio.Event()
             is_owner = True
+        else:
+            is_owner = False
         event = PARSING_EVENTS[normalized_search_word]
 
     if not is_owner:
-        logger.info(f"Парсинг для '{search_word}' уже запущен другим потоком, ожидание...")
-        event.wait(timeout=PARSING_TIMEOUT)
-        logger.info(f"Ожидание для '{search_word}' завершено, повторный поиск в кэше.")
-        result = local_search(normalized_search_word)
-        return ('ok', result) if result else ('not_found', None)
+        logger.info(f"Парсинг для '{search_word}' уже запущен другой задачей, ожидание...")
+        try:
+            await asyncio.wait_for(event.wait(), timeout=PARSING_TIMEOUT)
+            logger.info(f"Ожидание для '{search_word}' завершено, повторный поиск в кэше.")
+            result = local_search(normalized_search_word)
+            return ('ok', result) if result else ('not_found', None)
+        except asyncio.TimeoutError:
+            logger.warning(f"Таймаут ожидания для '{search_word}'.")
+            return 'error', None
 
     try:
         logger.info(f"--- Начало парсинга для '{search_word}' ---")
-        logger.info("Шаг 1: Выполнение HTTP-запроса...")
-        try:
-            search_url = f"https://www.pealim.com/ru/search/?q={quote(search_word)}"
-            session = requests.Session()
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'}
-            session.headers.update(headers)
-            search_response = session.get(search_url, timeout=10)
-            search_response.raise_for_status()
-            logger.info(f"Шаг 1.1: Успешно получен ответ от {search_url}")
-            
-            if "/dict/" in search_response.url:
-                response = search_response
-                logger.info("Шаг 1.2: Прямое перенаправление на словарную статью.")
-            else:
-                logger.info("Шаг 1.2: Ответ - страница поиска, ищем нужную ссылку...")
-                search_soup = BeautifulSoup(search_response.text, 'html.parser')
-                results_container = search_soup.find('div', class_='results-by-verb') or search_soup.find('div', class_='results-by-meaning')
-                if not results_container:
-                    logger.warning(f"Не найдено результатов на странице поиска для '{search_word}'.")
-                    return 'not_found', None
-                result_link = results_container.find('a', href=re.compile(r'/dict/'))
-                if not result_link or not result_link.get('href'):
-                    logger.warning(f"Не найдено ссылки на словарную статью для '{search_word}'.")
-                    return 'not_found', None
-                final_url = urljoin(search_response.url, result_link['href'])
-                logger.info(f"Шаг 1.3: Найдена ссылка, переход на {final_url}")
-                response = session.get(final_url, timeout=10)
-                response.raise_for_status()
-        except requests.RequestException as e:
-            logger.error(f"Сетевая ошибка при запросе к pealim.com: {e}", exc_info=True)
-            return 'error', None
-        
+        async with httpx.AsyncClient(headers={'User-Agent': 'Mozilla/5.0 ...'}, follow_redirects=True) as client:
+            logger.info("Шаг 1: Выполнение HTTP-запроса...")
+            try:
+                search_url = f"https://www.pealim.com/ru/search/?q={quote(search_word)}"
+                search_response = await client.get(search_url, timeout=10)
+                search_response.raise_for_status()
+                logger.info(f"Шаг 1.1: Успешно получен ответ от {search_url}")
+
+                if "/dict/" in str(search_response.url):
+                    response = search_response
+                    logger.info("Шаг 1.2: Прямое перенаправление на словарную статью.")
+                else:
+                    logger.info("Шаг 1.2: Ответ - страница поиска, ищем нужную ссылку...")
+                    search_soup = BeautifulSoup(search_response.text, 'html.parser')
+                    results_container = search_soup.find('div', class_='results-by-verb') or search_soup.find('div', class_='results-by-meaning')
+                    if not results_container:
+                        logger.warning(f"Не найдено результатов на странице поиска для '{search_word}'.")
+                        return 'not_found', None
+                    result_link = results_container.find('a', href=re.compile(r'/dict/'))
+                    if not result_link or not result_link.get('href'):
+                        logger.warning(f"Не найдено ссылки на словарную статью для '{search_word}'.")
+                        return 'not_found', None
+                    final_url = urljoin(str(search_response.url), result_link['href'])
+                    logger.info(f"Шаг 1.3: Найдена ссылка, переход на {final_url}")
+                    response = await client.get(final_url, timeout=10)
+                    response.raise_for_status()
+            except httpx.RequestError as e:
+                logger.error(f"Сетевая ошибка при запросе к pealim.com: {e}", exc_info=True)
+                return 'error', None
+
         logger.info("Шаг 1.4: Финальная страница успешно загружена.")
         soup = BeautifulSoup(response.text, 'html.parser')
         
@@ -200,11 +202,10 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
             logger.info("Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ.")
             parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
-        logger.info("Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга...")
         if not parsed_data:
             logger.error("Парсинг не удался: одна из функций парсинга вернула None.")
             return 'error', None
-        
+
         logger.info(f"Шаг 3.1: Парсер успешно вернул данные для '{parsed_data['hebrew']}'.")
         parsed_data['normalized_hebrew'] = normalize_hebrew(parsed_data['hebrew'])
         if parsed_data.get('conjugations'):
@@ -225,27 +226,12 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
                 parsed_data['is_verb'], parsed_data.get('root'), parsed_data.get('binyan'), datetime.now()
             ))
             word_id = cursor.lastrowid
-            
             if word_id and parsed_data.get('translations'):
-                translations_to_insert = [
-                    (word_id, t['translation_text'], t['context_comment'], t['is_primary'])
-                    for t in parsed_data['translations']
-                ]
-                cursor.executemany("""
-                    INSERT INTO translations (word_id, translation_text, context_comment, is_primary)
-                    VALUES (?, ?, ?, ?)
-                """, translations_to_insert)
-
+                translations_to_insert = [(word_id, t['translation_text'], t['context_comment'], t['is_primary']) for t in parsed_data['translations']]
+                cursor.executemany("INSERT INTO translations (word_id, translation_text, context_comment, is_primary) VALUES (?, ?, ?, ?)", translations_to_insert)
             if word_id and parsed_data.get('conjugations'):
-                conjugations_to_insert = [
-                    (word_id, c['tense'], c['person'], c['hebrew_form'], c['normalized_hebrew_form'], c['transcription'])
-                    for c in parsed_data['conjugations']
-                ]
-                cursor.executemany("""
-                    INSERT INTO verb_conjugations 
-                    (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, conjugations_to_insert)
+                conjugations_to_insert = [(word_id, c['tense'], c['person'], c['hebrew_form'], c['normalized_hebrew_form'], c['transcription']) for c in parsed_data['conjugations']]
+                cursor.executemany("INSERT INTO verb_conjugations (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription) VALUES (?, ?, ?, ?, ?, ?)", conjugations_to_insert)
         
         db_transaction(_save_word_transaction)
         logger.info("Шаг 4.1: Транзакция на запись отправлена в очередь.")
@@ -258,7 +244,7 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
             if final_word_data:
                 logger.info("Шаг 5.x: Слово успешно найдено в БД.")
                 break
-            time.sleep(DB_READ_DELAY)
+            await asyncio.sleep(DB_READ_DELAY)
         
         if final_word_data:
             logger.info(f"--- Парсинг для '{search_word}' завершен УСПЕШНО. ---")
@@ -272,7 +258,7 @@ def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dict[str,
         return 'error', None
     finally:
         logger.info(f"Шаг 6: Очистка события для '{search_word}'.")
-        with PARSING_EVENTS_LOCK:
+        async with PARSING_EVENTS_LOCK:
             if normalized_search_word in PARSING_EVENTS:
                 PARSING_EVENTS[normalized_search_word].set()
                 del PARSING_EVENTS[normalized_search_word]
