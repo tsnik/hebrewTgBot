@@ -1,0 +1,142 @@
+# -*- coding: utf-8 -*-
+
+from typing import Optional
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+
+from config import (
+    CB_DICT_VIEW, CB_DICT_DELETE_MODE, CB_DICT_CONFIRM_DELETE, 
+    CB_DICT_EXECUTE_DELETE, logger
+)
+from services.database import db_read_query, db_write_query
+
+async def view_dictionary_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработчик кнопок для навигации по словарю и переключения
+    в режим удаления.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    parts = query.data.split('_')
+    page = int(parts[-1])
+    # Определяем, был ли включен режим удаления
+    deletion_mode = parts[0] == CB_DICT_DELETE_MODE
+    
+    await view_dictionary_page_logic(update, context, page=page, deletion_mode=deletion_mode)
+
+
+async def view_dictionary_page_logic(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    page: int,
+    deletion_mode: bool,
+    exclude_word_id: Optional[int] = None
+):
+    """
+    Основная логика для отображения страницы словаря.
+    """
+    query = update.callback_query
+    user_id = query.from_user.id
+    
+    # Запрос для получения 6 слов, чтобы определить, есть ли следующая страница
+    sql_query = """
+        SELECT cw.word_id, cw.hebrew, t.translation_text
+        FROM cached_words cw
+        JOIN user_dictionary ud ON cw.word_id = ud.word_id
+        JOIN translations t ON cw.word_id = t.word_id
+        WHERE ud.user_id = ? AND t.is_primary = 1
+        ORDER BY ud.added_at DESC
+        LIMIT 6 OFFSET ?
+    """
+    offset = page * 5
+    words_from_db = db_read_query(sql_query, (user_id, offset), fetchall=True)
+    
+    # Если мы только что удалили слово, убираем его из списка
+    words = [w for w in words_from_db if w['word_id'] != exclude_word_id] if exclude_word_id else words_from_db
+    
+    has_next_page = len(words) > 5
+    words_on_page = words[:5]
+
+    # Если страница пуста после удаления, переходим на предыдущую
+    if not words_on_page and page > 0:
+        return await view_dictionary_page_logic(update, context, page=page - 1, deletion_mode=False)
+    
+    # Если слов нет совсем
+    if not words_on_page and page == 0:
+        await query.edit_message_text(
+            "Ваш словарь пуст.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]])
+        )
+        return
+
+    keyboard = []
+    message_text = f"Ваш словарь (стр. {page + 1}):\n\n"
+    if deletion_mode:
+        message_text = "Выберите слово для удаления:"
+
+    # Формируем список слов или кнопки для удаления
+    for word in words_on_page:
+        if deletion_mode:
+            keyboard.append([
+                InlineKeyboardButton(f"🗑️ {word['hebrew']}", callback_data=f"{CB_DICT_CONFIRM_DELETE}_{word['word_id']}_{page}")
+            ])
+        else:
+            message_text += f"• {word['hebrew']} — {word['translation_text']}\n"
+    
+    # Навигационные кнопки
+    nav_buttons = []
+    nav_pattern = CB_DICT_DELETE_MODE if deletion_mode else CB_DICT_VIEW
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("◀️", callback_data=f"{nav_pattern}_{page-1}"))
+    if has_next_page:
+        nav_buttons.append(InlineKeyboardButton("▶️", callback_data=f"{nav_pattern}_{page+1}"))
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    # Кнопки управления
+    if deletion_mode:
+        keyboard.append([InlineKeyboardButton("⬅️ К словарю", callback_data=f"{CB_DICT_VIEW}_{page}")])
+    else:
+        keyboard.append([InlineKeyboardButton("🗑️ Удалить слово", callback_data=f"{CB_DICT_DELETE_MODE}_0")])
+        keyboard.append([InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")])
+    
+    await query.edit_message_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает подтверждение удаления слова."""
+    query = update.callback_query
+    await query.answer()
+    
+    _, word_id_str, page_str = query.data.split('_')
+    word_data = db_read_query("SELECT hebrew FROM cached_words WHERE word_id = ?", (word_id_str,), fetchone=True)
+    
+    if not word_data:
+        await query.edit_message_text("Ошибка: слово не найдено.")
+        return
+        
+    text = f"Вы уверены, что хотите удалить слово '{word_data['hebrew']}' из вашего словаря?"
+    keyboard = [
+        [InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_DICT_EXECUTE_DELETE}_{word_id_str}_{page_str}")],
+        [InlineKeyboardButton("❌ Нет, отмена", callback_data=f"{CB_DICT_DELETE_MODE}_{page_str}")]
+    ]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def execute_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Окончательно удаляет слово из словаря пользователя."""
+    query = update.callback_query
+    await query.answer("Слово удалено")
+    
+    _, word_id_str, page_str = query.data.split('_')
+    word_id, page = int(word_id_str), int(page_str)
+    
+    db_write_query(
+        "DELETE FROM user_dictionary WHERE user_id = ? AND word_id = ?",
+        (query.from_user.id, word_id)
+    )
+    
+    # Перерисовываем страницу словаря, исключая удаленное слово
+    await view_dictionary_page_logic(update, context, page=page, deletion_mode=False, exclude_word_id=word_id)

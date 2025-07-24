@@ -33,11 +33,11 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 RUN mkdir data
 
 # Копируем код нашего приложения
-COPY hebrew_bot_production_ready.py ./hebrew_bot.py
+COPY app/ .
 
 # 6. Объявляем том для хранения персистентных данных (базы данных)
 #    Это позволяет Docker управлять данными отдельно от контейнера.
 VOLUME ["/app/data"]
 
 # 7. Указываем команду, которая будет выполняться при запуске контейнера
-CMD ["python", "hebrew_bot.py"]
+CMD ["python", "main.py"]
