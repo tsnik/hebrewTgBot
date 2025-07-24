@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 
 from config import (
     CB_DICT_VIEW, CB_DICT_DELETE_MODE, CB_DICT_CONFIRM_DELETE, 
-    CB_DICT_EXECUTE_DELETE, logger
+    CB_DICT_EXECUTE_DELETE, logger, DICT_WORDS_PER_PAGE
 )
 from services.database import db_read_query, db_write_query
 
@@ -19,10 +19,13 @@ async def view_dictionary_page_handler(update: Update, context: ContextTypes.DEF
     query = update.callback_query
     await query.answer()
     
-    parts = query.data.split('_')
-    page = int(parts[-1])
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: парсинг через ':' ---
+    parts = query.data.split(':')
+    action = f"{parts[0]}:{parts[1]}" # e.g., "dict:view"
+    page = int(parts[2])
     # Определяем, был ли включен режим удаления
-    deletion_mode = parts[0] == CB_DICT_DELETE_MODE
+    deletion_mode = action == CB_DICT_DELETE_MODE
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
     await view_dictionary_page_logic(update, context, page=page, deletion_mode=deletion_mode)
 
@@ -40,7 +43,10 @@ async def view_dictionary_page_logic(
     query = update.callback_query
     user_id = query.from_user.id
     
-    # Запрос для получения 6 слов, чтобы определить, есть ли следующая страница
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: использование константы вместо "магических чисел" ---
+    # Запрос для получения (N+1) слов, чтобы определить, есть ли следующая страница
+    limit = DICT_WORDS_PER_PAGE + 1
+    offset = page * DICT_WORDS_PER_PAGE
     sql_query = """
         SELECT cw.word_id, cw.hebrew, t.translation_text
         FROM cached_words cw
@@ -48,16 +54,16 @@ async def view_dictionary_page_logic(
         JOIN translations t ON cw.word_id = t.word_id
         WHERE ud.user_id = ? AND t.is_primary = 1
         ORDER BY ud.added_at DESC
-        LIMIT 6 OFFSET ?
+        LIMIT ? OFFSET ?
     """
-    offset = page * 5
-    words_from_db = db_read_query(sql_query, (user_id, offset), fetchall=True)
+    words_from_db = db_read_query(sql_query, (user_id, limit, offset), fetchall=True)
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
     # Если мы только что удалили слово, убираем его из списка
     words = [w for w in words_from_db if w['word_id'] != exclude_word_id] if exclude_word_id else words_from_db
     
-    has_next_page = len(words) > 5
-    words_on_page = words[:5]
+    has_next_page = len(words) > DICT_WORDS_PER_PAGE
+    words_on_page = words[:DICT_WORDS_PER_PAGE]
 
     # Если страница пуста после удаления, переходим на предыдущую
     if not words_on_page and page > 0:
@@ -76,11 +82,12 @@ async def view_dictionary_page_logic(
     if deletion_mode:
         message_text = "Выберите слово для удаления:"
 
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     # Формируем список слов или кнопки для удаления
     for word in words_on_page:
         if deletion_mode:
             keyboard.append([
-                InlineKeyboardButton(f"🗑️ {word['hebrew']}", callback_data=f"{CB_DICT_CONFIRM_DELETE}_{word['word_id']}_{page}")
+                InlineKeyboardButton(f"🗑️ {word['hebrew']}", callback_data=f"{CB_DICT_CONFIRM_DELETE}:{word['word_id']}:{page}")
             ])
         else:
             message_text += f"• {word['hebrew']} — {word['translation_text']}\n"
@@ -89,18 +96,20 @@ async def view_dictionary_page_logic(
     nav_buttons = []
     nav_pattern = CB_DICT_DELETE_MODE if deletion_mode else CB_DICT_VIEW
     if page > 0:
-        nav_buttons.append(InlineKeyboardButton("◀️", callback_data=f"{nav_pattern}_{page-1}"))
+        nav_buttons.append(InlineKeyboardButton("◀️", callback_data=f"{nav_pattern}:{page-1}"))
     if has_next_page:
-        nav_buttons.append(InlineKeyboardButton("▶️", callback_data=f"{nav_pattern}_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton("▶️", callback_data=f"{nav_pattern}:{page+1}"))
     if nav_buttons:
         keyboard.append(nav_buttons)
     
     # Кнопки управления
     if deletion_mode:
-        keyboard.append([InlineKeyboardButton("⬅️ К словарю", callback_data=f"{CB_DICT_VIEW}_{page}")])
+        keyboard.append([InlineKeyboardButton("⬅️ К словарю", callback_data=f"{CB_DICT_VIEW}:{page}")])
     else:
-        keyboard.append([InlineKeyboardButton("🗑️ Удалить слово", callback_data=f"{CB_DICT_DELETE_MODE}_0")])
+        # При переходе в режим удаления всегда открываем первую страницу
+        keyboard.append([InlineKeyboardButton("🗑️ Удалить слово", callback_data=f"{CB_DICT_DELETE_MODE}:0")])
         keyboard.append([InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")])
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
     await query.edit_message_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -110,7 +119,9 @@ async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    _, word_id_str, page_str = query.data.split('_')
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: парсинг через ':' ---
+    _, _, word_id_str, page_str = query.data.split(':')
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     word_data = db_read_query("SELECT hebrew FROM cached_words WHERE word_id = ?", (word_id_str,), fetchone=True)
     
     if not word_data:
@@ -118,10 +129,12 @@ async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
         
     text = f"Вы уверены, что хотите удалить слово '{word_data['hebrew']}' из вашего словаря?"
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     keyboard = [
-        [InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_DICT_EXECUTE_DELETE}_{word_id_str}_{page_str}")],
-        [InlineKeyboardButton("❌ Нет, отмена", callback_data=f"{CB_DICT_DELETE_MODE}_{page_str}")]
+        [InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_DICT_EXECUTE_DELETE}:{word_id_str}:{page_str}")],
+        [InlineKeyboardButton("❌ Нет, отмена", callback_data=f"{CB_DICT_DELETE_MODE}:{page_str}")]
     ]
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -130,7 +143,9 @@ async def execute_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer("Слово удалено")
     
-    _, word_id_str, page_str = query.data.split('_')
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: парсинг через ':' ---
+    _, _, word_id_str, page_str = query.data.split(':')
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     word_id, page = int(word_id_str), int(page_str)
     
     db_write_query(

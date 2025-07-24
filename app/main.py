@@ -69,11 +69,7 @@ def main() -> None:
         entry_points=[CallbackQueryHandler(training_menu, pattern=f"^{CB_TRAIN_MENU}$")],
         states={
             TRAINING_MENU_STATE: [
-                # --- НАЧАЛО ИЗМЕНЕНИЯ ---
-                # Добавляем обработчик для CB_TRAIN_MENU, чтобы можно было
-                # обновлять меню, находясь в этом же состоянии.
                 CallbackQueryHandler(training_menu, pattern=f"^{CB_TRAIN_MENU}$"),
-                # --- КОНЕЦ ИЗМЕНЕНИЯ ---
                 CallbackQueryHandler(start_flashcard_training, pattern=f"^({CB_TRAIN_HE_RU}|{CB_TRAIN_RU_HE})$"),
                 CallbackQueryHandler(start_verb_trainer, pattern=f"^{CB_VERB_TRAINER_START}$"),
                 CallbackQueryHandler(back_to_main_menu, pattern="^main_menu$")
@@ -108,15 +104,17 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(main_menu, pattern="^main_menu$"))
     
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: Паттерны используют ':' вместо '_' ---
     # Обработчики словаря
-    application.add_handler(CallbackQueryHandler(view_dictionary_page_handler, pattern=f"^{CB_DICT_VIEW}_|{CB_DICT_DELETE_MODE}_"))
-    application.add_handler(CallbackQueryHandler(confirm_delete_word, pattern=f"^{CB_DICT_CONFIRM_DELETE}_"))
-    application.add_handler(CallbackQueryHandler(execute_delete_word, pattern=f"^{CB_DICT_EXECUTE_DELETE}_"))
+    application.add_handler(CallbackQueryHandler(view_dictionary_page_handler, pattern=f"^({CB_DICT_VIEW}|{CB_DICT_DELETE_MODE}):"))
+    application.add_handler(CallbackQueryHandler(confirm_delete_word, pattern=f"^{CB_DICT_CONFIRM_DELETE}:"))
+    application.add_handler(CallbackQueryHandler(execute_delete_word, pattern=f"^{CB_DICT_EXECUTE_DELETE}:"))
     
     # Обработчики карточки слова
-    application.add_handler(CallbackQueryHandler(add_word_to_dictionary, pattern=f"^{CB_ADD}_"))
-    application.add_handler(CallbackQueryHandler(show_verb_conjugations, pattern=f"^{CB_SHOW_VERB}_"))
-    application.add_handler(CallbackQueryHandler(view_word_card_handler, pattern=f"^{CB_VIEW_CARD}_"))
+    application.add_handler(CallbackQueryHandler(add_word_to_dictionary, pattern=f"^{CB_ADD}:"))
+    application.add_handler(CallbackQueryHandler(show_verb_conjugations, pattern=f"^{CB_SHOW_VERB}:"))
+    application.add_handler(CallbackQueryHandler(view_word_card_handler, pattern=f"^{CB_VIEW_CARD}:"))
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
     # Добавляем ConversationHandler для тренировок
     application.add_handler(training_conv)

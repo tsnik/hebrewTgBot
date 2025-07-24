@@ -17,6 +17,7 @@ DB_READ_ATTEMPTS = 5
 DB_READ_DELAY = 0.2
 CONVERSATION_TIMEOUT_SECONDS = 1800  # 30 минут
 VERB_TRAINER_RETRY_ATTEMPTS = 3
+DICT_WORDS_PER_PAGE = 5  # <--- ДОБАВЛЕНА КОНСТАНТА
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
 logging.basicConfig(
@@ -34,26 +35,27 @@ logger = logging.getLogger(__name__)
     VERB_TRAINER_NEXT_ACTION,
 ) = range(5)
 
-# --- КОЛЛБЭК-ДАННЫЕ (CALLBACK DATA) ---
+
+# --- КОЛЛБЭК-ДАННЫЕ (CALLBACK DATA) --- ИЗМЕНЕНЫ НА ЧИТАЕМЫЕ
 # Словарь
-CB_DICT_VIEW = "d_v"
-CB_DICT_DELETE_MODE = "d_dm"
-CB_DICT_CONFIRM_DELETE = "d_cd"
-CB_DICT_EXECUTE_DELETE = "d_ed"
+CB_DICT_VIEW = "dict:view"
+CB_DICT_DELETE_MODE = "dict:delete_mode"
+CB_DICT_CONFIRM_DELETE = "dict:confirm_delete"
+CB_DICT_EXECUTE_DELETE = "dict:execute_delete"
 
 # Карточка слова
-CB_ADD = "add"
-CB_SHOW_VERB = "sh_v"
-CB_VIEW_CARD = "v_c"
+CB_ADD = "word:add"
+CB_SHOW_VERB = "verb:show"
+CB_VIEW_CARD = "word:view"
 
 # Меню тренировок
-CB_TRAIN_MENU = "t_m"
-CB_TRAIN_HE_RU = "t_hr"
-CB_TRAIN_RU_HE = "t_rh"
-CB_VERB_TRAINER_START = "vts"
+CB_TRAIN_MENU = "train:menu"
+CB_TRAIN_HE_RU = "train:he_ru"
+CB_TRAIN_RU_HE = "train:ru_he"
+CB_VERB_TRAINER_START = "train:verb_start"
 
 # Процесс тренировки
-CB_SHOW_ANSWER = "sh_a"
-CB_EVAL_CORRECT = "e_c"
-CB_EVAL_INCORRECT = "e_i"
-CB_END_TRAINING = "e_t"
+CB_SHOW_ANSWER = "train:show_answer"
+CB_EVAL_CORRECT = "train:eval_correct"
+CB_EVAL_INCORRECT = "train:eval_incorrect"
+CB_END_TRAINING = "train:end"

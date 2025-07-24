@@ -18,10 +18,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)",
         (user.id, user.first_name, user.username)
     )
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     keyboard = [
-        [InlineKeyboardButton("🧠 Мой словарь", callback_data=f"{CB_DICT_VIEW}_0")],
+        [InlineKeyboardButton("🧠 Мой словарь", callback_data=f"{CB_DICT_VIEW}:0")],
         [InlineKeyboardButton("💪 Тренировка", callback_data=CB_TRAIN_MENU)]
     ]
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     await update.message.reply_text(
         f"Привет, {user.first_name}! Отправь мне слово на иврите для поиска.",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -31,10 +33,12 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Возвращает пользователя в главное меню."""
     query = update.callback_query
     await query.answer()
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     keyboard = [
-        [InlineKeyboardButton("🧠 Мой словарь", callback_data=f"{CB_DICT_VIEW}_0")],
+        [InlineKeyboardButton("🧠 Мой словарь", callback_data=f"{CB_DICT_VIEW}:0")],
         [InlineKeyboardButton("💪 Тренировка", callback_data=CB_TRAIN_MENU)]
     ]
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     await query.edit_message_text(
         "Главное меню:",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -46,7 +50,7 @@ async def display_word_card(
     chat_id: int,
     word_data: dict,
     message_id: Optional[int] = None,
-    in_dictionary: Optional[bool] = None  # <-- ИЗМЕНЕНИЕ: Добавлен новый параметр
+    in_dictionary: Optional[bool] = None
 ):
     """
     Отображает карточку слова. Редактирует существующее сообщение, если
@@ -54,15 +58,12 @@ async def display_word_card(
     """
     word_id = word_data['word_id']
     
-    # --- НАЧАЛО ИЗМЕНЕНИЯ ---
-    # Если статус не передан явно, проверяем его в БД.
     if in_dictionary is None:
         in_dictionary = db_read_query(
             "SELECT 1 FROM user_dictionary WHERE user_id = ? AND word_id = ?",
             (user_id, word_id),
             fetchone=True
         )
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
     translations = word_data.get('translations', [])
     primary_translation = next((t['translation_text'] for t in translations if t['is_primary']), "Перевод не найден")
@@ -75,16 +76,19 @@ async def display_word_card(
     card_text_header = f"Слово *{word_data['hebrew']}* уже в вашем словаре." if in_dictionary else f"Найдено: *{word_data['hebrew']}*"
     card_text = f"{card_text_header} [{word_data.get('transcription', '')}]\nПеревод: {translation_str}"
 
+    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     keyboard_buttons = []
     if in_dictionary:
-        keyboard_buttons.append(InlineKeyboardButton("🗑️ Удалить", callback_data=f"{CB_DICT_CONFIRM_DELETE}_{word_id}_0"))
+        # При переходе в режим удаления всегда открываем первую страницу
+        keyboard_buttons.append(InlineKeyboardButton("🗑️ Удалить", callback_data=f"{CB_DICT_CONFIRM_DELETE}:{word_id}:0"))
     else:
-        keyboard_buttons.append(InlineKeyboardButton("➕ Добавить", callback_data=f"{CB_ADD}_{word_id}"))
+        keyboard_buttons.append(InlineKeyboardButton("➕ Добавить", callback_data=f"{CB_ADD}:{word_id}"))
 
     if word_data.get('is_verb'):
-        keyboard_buttons.append(InlineKeyboardButton("📖 Спряжения", callback_data=f"{CB_SHOW_VERB}_{word_id}"))
+        keyboard_buttons.append(InlineKeyboardButton("📖 Спряжения", callback_data=f"{CB_SHOW_VERB}:{word_id}"))
     
     keyboard = [keyboard_buttons, [InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]]
+    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
@@ -104,7 +108,6 @@ async def display_word_card(
                 parse_mode=ParseMode.MARKDOWN
             )
     except Exception as e:
-        # Проверяем на ошибку "Message is not modified" и игнорируем ее
         if "Message is not modified" in str(e):
             logger.warning("Попытка отредактировать сообщение без изменений. Игнорируется.")
         else:
