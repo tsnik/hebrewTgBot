@@ -13,12 +13,15 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from config import logger, PARSING_TIMEOUT
-from services.database import local_search, db_transaction, db_read_query, DB_READ_ATTEMPTS, DB_READ_DELAY
+from dal.repositories import WordRepository
 from utils import normalize_hebrew, parse_translations
+from services.database import DB_READ_ATTEMPTS, DB_READ_DELAY
 
 # --- УПРАВЛЕНИЕ КОНКУРЕНТНЫМ ПАРСИНГОМ ---
 PARSING_EVENTS: Dict[str, asyncio.Event] = {}
 PARSING_EVENTS_LOCK = asyncio.Lock()
+
+word_repo = WordRepository()
 
 
 def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
@@ -147,8 +150,8 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
         try:
             await asyncio.wait_for(event.wait(), timeout=PARSING_TIMEOUT)
             logger.info(f"Ожидание для '{search_word}' завершено, повторный поиск в кэше.")
-            result = local_search(normalized_search_word)
-            return ('ok', result) if result else ('not_found', None)
+            result = word_repo.find_word_by_normalized_form(normalized_search_word)
+            return ('ok', result.dict() if result else None)
         except asyncio.TimeoutError:
             logger.warning(f"Таймаут ожидания для '{search_word}'.")
             return 'error', None
@@ -213,57 +216,33 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
             for conj in parsed_data['conjugations']:
                 conj['normalized_hebrew_form'] = normalize_hebrew(conj['hebrew_form'])
         
-        if local_search(parsed_data['normalized_hebrew']):
+        if word_repo.find_word_by_normalized_form(parsed_data['normalized_hebrew']):
             logger.info(f"Шаг 3.2: Нормализованная форма '{parsed_data['normalized_hebrew']}' уже есть в кэше. Сохранение не требуется.")
-            return 'ok', local_search(parsed_data['normalized_hebrew'])
+            result = word_repo.find_word_by_normalized_form(parsed_data['normalized_hebrew'])
+            return 'ok', result.dict() if result else None
 
         logger.info(f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его форм в БД...")
-        def _save_word_transaction(cursor: sqlite3.Cursor):
-            cursor.execute("""
-                INSERT INTO cached_words (hebrew, normalized_hebrew, transcription, is_verb, root, binyan, fetched_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                parsed_data['hebrew'], parsed_data['normalized_hebrew'], parsed_data['transcription'],
-                parsed_data['is_verb'], parsed_data.get('root'), parsed_data.get('binyan'), datetime.now()
-            ))
-            word_id = cursor.lastrowid
+        new_word_id = word_repo.create_cached_word(
+            hebrew=parsed_data['hebrew'],
+            normalized_hebrew=parsed_data['normalized_hebrew'],
+            transcription=parsed_data.get('transcription'),
+            is_verb=parsed_data['is_verb'],
+            root=parsed_data.get('root'),
+            binyan=parsed_data.get('binyan'),
+            translations=parsed_data.get('translations', []),
+            conjugations=parsed_data.get('conjugations', [])
+        )
+        
+        if not new_word_id:
+            logger.error(f"--- Парсинг для '{search_word}' завершен с ОШИБКОЙ БД (не удалось создать запись). ---")
+            return 'db_error', None
 
-            if word_id and parsed_data.get('translations'):
-                translations_to_insert = [
-                    (word_id, t['translation_text'], t['context_comment'], t['is_primary'])
-                    for t in parsed_data['translations']
-                ]
-                cursor.executemany("""
-                    INSERT INTO translations (word_id, translation_text, context_comment, is_primary)
-                    VALUES (?, ?, ?, ?)
-                """, translations_to_insert)
-            if word_id and parsed_data.get('conjugations'):
-                conjugations_to_insert = [
-                    (word_id, c['tense'], c['person'], c['hebrew_form'], c['normalized_hebrew_form'], c['transcription'])
-                    for c in parsed_data['conjugations']
-                ]
-                cursor.executemany("""
-                    INSERT INTO verb_conjugations 
-                    (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, conjugations_to_insert)
-        
-        db_transaction(_save_word_transaction)
-        logger.info("Шаг 4.1: Транзакция на запись отправлена в очередь.")
-        
         logger.info("Шаг 5: Ожидание появления слова в БД и возврат результата...")
-        final_word_data = None
-        for i in range(DB_READ_ATTEMPTS):
-            logger.info(f"Шаг 5.{i+1}: Попытка чтения из БД...")
-            final_word_data = local_search(parsed_data['normalized_hebrew'])
-            if final_word_data:
-                logger.info("Шаг 5.x: Слово успешно найдено в БД.")
-                break
-            await asyncio.sleep(DB_READ_DELAY)
+        final_word_data = word_repo.get_word_by_id(new_word_id)
         
         if final_word_data:
             logger.info(f"--- Парсинг для '{search_word}' завершен УСПЕШНО. ---")
-            return 'ok', final_word_data
+            return 'ok', final_word_data.dict()
         else:
             logger.error(f"--- Парсинг для '{search_word}' завершен с ОШИБКОЙ БД (не удалось прочитать запись). ---")
             return 'db_error', None
