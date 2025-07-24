@@ -53,7 +53,7 @@ def main() -> None:
     db_worker_thread.start()
     
     # 2. Инициализируем таблицы в БД
-    init_db()
+    # init_db() - теперь этим занимается yoyo
     
     # 3. Собираем приложение
     application = Application.builder().token(BOT_TOKEN).build()

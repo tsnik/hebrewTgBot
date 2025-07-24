@@ -40,4 +40,8 @@ COPY app/ .
 VOLUME ["/app/data"]
 
 # 7. Указываем команду, которая будет выполняться при запуске контейнера
-CMD ["python", "main.py"]
+CMD ["sh", "-c", "echo '--- Starting container ---' && \
+                  echo '--- Applying migrations... ---' && \
+                  yoyo apply -v && \
+                  echo '--- Migrations applied. Starting bot... ---' && \
+                  python main.py"]
