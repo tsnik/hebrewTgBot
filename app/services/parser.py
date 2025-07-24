@@ -227,11 +227,24 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
             ))
             word_id = cursor.lastrowid
             if word_id and parsed_data.get('translations'):
-                translations_to_insert = [(word_id, t['translation_text'], t['context_comment'], t['is_primary']) for t in parsed_data['translations']]
-                cursor.executemany("INSERT INTO translations (word_id, translation_text, context_comment, is_primary) VALUES (?, ?, ?, ?)", translations_to_insert)
+                translations_to_insert = [
+                    (word_id, t['translation_text'], t['context_comment'], t['is_primary']) 
+                    for t in parsed_data['translations']
+                ]
+                cursor.executemany("""
+                    INSERT INTO translations (word_id, translation_text, context_comment, is_primary)
+                    VALUES (?, ?, ?, ?)
+                """, translations_to_insert)
             if word_id and parsed_data.get('conjugations'):
-                conjugations_to_insert = [(word_id, c['tense'], c['person'], c['hebrew_form'], c['normalized_hebrew_form'], c['transcription']) for c in parsed_data['conjugations']]
-                cursor.executemany("INSERT INTO verb_conjugations (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription) VALUES (?, ?, ?, ?, ?, ?)", conjugations_to_insert)
+                conjugations_to_insert = [
+                    (word_id, c['tense'], c['person'], c['hebrew_form'], c['normalized_hebrew_form'], c['transcription'])
+                    for c in parsed_data['conjugations']
+                ]
+                cursor.executemany("""
+                    INSERT INTO verb_conjugations 
+                    (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, conjugations_to_insert)
         
         db_transaction(_save_word_transaction)
         logger.info("Шаг 4.1: Транзакция на запись отправлена в очередь.")
