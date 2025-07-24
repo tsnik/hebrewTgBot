@@ -82,7 +82,6 @@ async def view_dictionary_page_logic(
     if deletion_mode:
         message_text = "Выберите слово для удаления:"
 
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     # Формируем список слов или кнопки для удаления
     for word in words_on_page:
         if deletion_mode:
@@ -109,7 +108,6 @@ async def view_dictionary_page_logic(
         # При переходе в режим удаления всегда открываем первую страницу
         keyboard.append([InlineKeyboardButton("🗑️ Удалить слово", callback_data=f"{CB_DICT_DELETE_MODE}:0")])
         keyboard.append([InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")])
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
     await query.edit_message_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -119,9 +117,7 @@ async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: парсинг через ':' ---
     _, _, word_id_str, page_str = query.data.split(':')
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     word_data = db_read_query("SELECT hebrew FROM cached_words WHERE word_id = ?", (word_id_str,), fetchone=True)
     
     if not word_data:
@@ -129,12 +125,10 @@ async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
         
     text = f"Вы уверены, что хотите удалить слово '{word_data['hebrew']}' из вашего словаря?"
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     keyboard = [
         [InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_DICT_EXECUTE_DELETE}:{word_id_str}:{page_str}")],
         [InlineKeyboardButton("❌ Нет, отмена", callback_data=f"{CB_DICT_DELETE_MODE}:{page_str}")]
     ]
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -143,9 +137,7 @@ async def execute_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer("Слово удалено")
     
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: парсинг через ':' ---
     _, _, word_id_str, page_str = query.data.split(':')
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     word_id, page = int(word_id_str), int(page_str)
     
     db_write_query(

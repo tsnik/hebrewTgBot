@@ -18,12 +18,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)",
         (user.id, user.first_name, user.username)
     )
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     keyboard = [
         [InlineKeyboardButton("🧠 Мой словарь", callback_data=f"{CB_DICT_VIEW}:0")],
         [InlineKeyboardButton("💪 Тренировка", callback_data=CB_TRAIN_MENU)]
     ]
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     await update.message.reply_text(
         f"Привет, {user.first_name}! Отправь мне слово на иврите для поиска.",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -33,12 +31,10 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Возвращает пользователя в главное меню."""
     query = update.callback_query
     await query.answer()
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     keyboard = [
         [InlineKeyboardButton("🧠 Мой словарь", callback_data=f"{CB_DICT_VIEW}:0")],
         [InlineKeyboardButton("💪 Тренировка", callback_data=CB_TRAIN_MENU)]
     ]
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     await query.edit_message_text(
         "Главное меню:",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -76,7 +72,6 @@ async def display_word_card(
     card_text_header = f"Слово *{word_data['hebrew']}* уже в вашем словаре." if in_dictionary else f"Найдено: *{word_data['hebrew']}*"
     card_text = f"{card_text_header} [{word_data.get('transcription', '')}]\nПеревод: {translation_str}"
 
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: callback_data использует ':' ---
     keyboard_buttons = []
     if in_dictionary:
         # При переходе в режим удаления всегда открываем первую страницу
@@ -88,7 +83,6 @@ async def display_word_card(
         keyboard_buttons.append(InlineKeyboardButton("📖 Спряжения", callback_data=f"{CB_SHOW_VERB}:{word_id}"))
     
     keyboard = [keyboard_buttons, [InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]]
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     try:
