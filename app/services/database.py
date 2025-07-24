@@ -20,14 +20,19 @@ def db_worker():
     """
     # Убедимся, что директория для БД существует
     os.makedirs(os.path.dirname(DB_NAME), exist_ok=True)
-    conn = sqlite3.connect(DB_NAME, timeout=10)
-    # Включаем режим WAL для лучшей производительности при одновременном чтении и записи
-    conn.execute("PRAGMA journal_mode=WAL;")
+    
+    conn = None
+    
     while True:
         try:
             item = DB_WRITE_QUEUE.get()
             if item is None:  # Сигнал для завершения работы
                 break
+                
+            if conn is None:
+                conn = sqlite3.connect(DB_NAME, timeout=10)
+                # Включаем режим WAL для лучшей производительности
+                conn.execute("PRAGMA journal_mode=WAL;")
             
             cursor = conn.cursor()
             
@@ -50,6 +55,9 @@ def db_worker():
                 conn.commit()
         except Exception as e:
             logger.error(f"DB-WORKER: Критическая ошибка: {e}", exc_info=True)
+            
+    if conn:
+        conn.close()
 
 def db_write_query(query: str, params: tuple = (), many: bool = False):
     """Помещает запрос на запись (INSERT, UPDATE, DELETE) в очередь."""
