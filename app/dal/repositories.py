@@ -5,6 +5,7 @@ from datetime import datetime
 
 from services.database import db_read_query, db_write_query, db_transaction
 from .models import CachedWord, Translation, VerbConjugation
+from config import logger
 
 
 class BaseRepository:
@@ -128,7 +129,7 @@ class WordRepository(BaseRepository):
             self._db_transaction(transaction_logic)
             return result_container[0]
         except Exception as e:
-            # Логируем ошибку, если нужно
+            logger.error(f"Error in transaction: {e}", exc_info=True)
             return None
 
 
