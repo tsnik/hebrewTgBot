@@ -202,10 +202,11 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
             logger.info("Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ.")
             parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
+        logger.info("Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга...")
         if not parsed_data:
             logger.error("Парсинг не удался: одна из функций парсинга вернула None.")
             return 'error', None
-
+        
         logger.info(f"Шаг 3.1: Парсер успешно вернул данные для '{parsed_data['hebrew']}'.")
         parsed_data['normalized_hebrew'] = normalize_hebrew(parsed_data['hebrew'])
         if parsed_data.get('conjugations'):
@@ -226,9 +227,10 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
                 parsed_data['is_verb'], parsed_data.get('root'), parsed_data.get('binyan'), datetime.now()
             ))
             word_id = cursor.lastrowid
+
             if word_id and parsed_data.get('translations'):
                 translations_to_insert = [
-                    (word_id, t['translation_text'], t['context_comment'], t['is_primary']) 
+                    (word_id, t['translation_text'], t['context_comment'], t['is_primary'])
                     for t in parsed_data['translations']
                 ]
                 cursor.executemany("""
