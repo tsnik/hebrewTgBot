@@ -56,9 +56,7 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer("Добавлено!")
     
-    # --- НАЧАЛО ИЗМЕНЕНИЯ: парсинг через ':' ---
     word_id = int(query.data.split(':')[2])
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     user_id = query.from_user.id
     
     db_write_query(
