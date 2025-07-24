@@ -133,46 +133,4 @@ def init_db():
     db_write_query("CREATE INDEX IF NOT EXISTS idx_normalized_hebrew_form ON verb_conjugations(normalized_hebrew_form)")
     db_write_query("CREATE INDEX IF NOT EXISTS idx_translations_word_id ON translations(word_id)")
 
-def local_search(normalized_search_word: str) -> Optional[Dict[str, Any]]:
-    """
-    Ищет слово в локальной базе данных по НОРМАЛИЗОВАННОЙ форме.
-    Сначала ищет в формах глаголов, затем в канонических формах.
-    Возвращает полную карточку слова со всеми данными.
-    """
-    word_id = None
-    
-    # 1. Поиск по формам глаголов
-    conjugation = db_read_query(
-        "SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?",
-        (normalized_search_word,),
-        fetchone=True
-    )
-    if conjugation:
-        word_id = conjugation['word_id']
-    else:
-    # 2. Поиск по каноническим формам
-        word_data_row = db_read_query(
-            "SELECT word_id FROM cached_words WHERE normalized_hebrew = ?",
-            (normalized_search_word,),
-            fetchone=True
-        )
-        if word_data_row:
-            word_id = word_data_row['word_id']
-
-    if not word_id:
-        return None
-
-    # Собираем полную информацию о слове, если оно было найдено
-    word_data = db_read_query("SELECT * FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
-    if not word_data:
-        return None
-    
-    translations = db_read_query(
-        "SELECT * FROM translations WHERE word_id = ? ORDER BY is_primary DESC",
-        (word_id,),
-        fetchall=True
-    )
-    
-    result = dict(word_data)
-    result['translations'] = [dict(t) for t in translations] if translations else []
-    return result
+# local_search is removed

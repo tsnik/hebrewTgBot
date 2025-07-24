@@ -7,11 +7,20 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
+from datetime import datetime
+import re
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+from telegram.constants import ParseMode
+
 from config import logger, CB_ADD, CB_SHOW_VERB, CB_VIEW_CARD
-from services.database import local_search, db_write_query, db_read_query
 from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card
+from dal.repositories import WordRepository, UserDictionaryRepository
+
+word_repo = WordRepository()
+user_dict_repo = UserDictionaryRepository()
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -32,9 +41,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     normalized_text = normalize_hebrew(text)
     
-    word_data = local_search(normalized_text)
+    word_data = word_repo.find_word_by_normalized_form(normalized_text)
     if word_data:
-        await display_word_card(context, user_id, chat_id, word_data)
+        # Pydantic модели нужно преобразовать в dict для display_word_card
+        word_dict = word_data.dict()
+        await display_word_card(context, user_id, chat_id, word_dict)
         return
 
     status_message = await update.message.reply_text("🔎 Ищу слово во внешнем словаре...")
@@ -42,6 +53,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     status, data = await fetch_and_cache_word_data(text)
 
     if status == 'ok' and data:
+        # data от fetch_and_cache_word_data уже dict
         await display_word_card(context, user_id, chat_id, data, message_id=status_message.message_id)
     elif status == 'not_found':
         await context.bot.edit_message_text(f"Слово '{text}' не найдено.", chat_id=chat_id, message_id=status_message.message_id)
@@ -59,24 +71,20 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
     word_id = int(query.data.split(':')[2])
     user_id = query.from_user.id
     
-    db_write_query(
-        "INSERT OR IGNORE INTO user_dictionary (user_id, word_id, next_review_at) VALUES (?, ?, ?)",
-        (user_id, word_id, datetime.now())
-    )
+    user_dict_repo.add_word_to_dictionary(user_id, word_id)
     
-    word_data_row = db_read_query("SELECT normalized_hebrew FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
-    if word_data_row:
-        word_data = local_search(word_data_row['normalized_hebrew'])
-        if word_data:
-            # Передаем in_dictionary=True, чтобы функция знала, что слово уже добавлено
-            await display_word_card(
-                context,
-                user_id,
-                query.message.chat_id,
-                word_data,
-                message_id=query.message.message_id,
-                in_dictionary=True
-            )
+    word_data = word_repo.get_word_by_id(word_id)
+    if word_data:
+        word_dict = word_data.dict()
+        # Передаем in_dictionary=True, чтобы функция знала, что слово уже добавлено
+        await display_word_card(
+            context,
+            user_id,
+            query.message.chat_id,
+            word_dict,
+            message_id=query.message.message_id,
+            in_dictionary=True
+        )
 
 
 async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,27 +93,27 @@ async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     
     word_id = int(query.data.split(':')[-1])
-    word_info = db_read_query("SELECT hebrew FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
-    conjugations_raw = db_read_query("SELECT tense, person, hebrew_form, transcription FROM verb_conjugations WHERE word_id = ? ORDER BY id", (word_id,), fetchall=True)
+    word_hebrew = word_repo.get_word_hebrew_by_id(word_id)
+    conjugations = word_repo.get_conjugations_for_word(word_id)
     
     keyboard = [[InlineKeyboardButton("⬅️ Назад к слову", callback_data=f"{CB_VIEW_CARD}:{word_id}")]]
 
-    if not conjugations_raw or not word_info:
+    if not conjugations or not word_hebrew:
         await query.edit_message_text("Для этого глагола нет таблицы спряжений.", reply_markup=InlineKeyboardMarkup(keyboard))
         return
         
     conjugations_by_tense = {}
-    message_text = f"Спряжения для *{word_info['hebrew']}*:\n"
+    message_text = f"Спряжения для *{word_hebrew}*:\n"
     
-    for conj in conjugations_raw:
-        if conj['tense'] not in conjugations_by_tense:
-            conjugations_by_tense[conj['tense']] = []
-        conjugations_by_tense[conj['tense']].append(conj)
+    for conj in conjugations:
+        if conj.tense not in conjugations_by_tense:
+            conjugations_by_tense[conj.tense] = []
+        conjugations_by_tense[conj.tense].append(conj)
         
-    for tense, conjugations in conjugations_by_tense.items():
+    for tense, conj_list in conjugations_by_tense.items():
         message_text += f"\n*{tense.capitalize()}*:\n"
-        for conj in conjugations:
-            message_text += f"_{conj['person']}_: {conj['hebrew_form']} ({conj['transcription']})\n"
+        for conj in conj_list:
+            message_text += f"_{conj.person}_: {conj.hebrew_form} ({conj.transcription})\n"
             
     if len(message_text) > 4096:
         message_text = message_text[:4090] + "\n(...)"
@@ -123,12 +131,9 @@ async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_T
     chat_id = query.message.chat_id
     message_id = query.message.message_id
     
-    word_data_row = db_read_query("SELECT hebrew FROM cached_words WHERE word_id = ?", (word_id,), fetchone=True)
-    if word_data_row:
-        word_data = local_search(normalize_hebrew(word_data_row['hebrew']))
-        if word_data:
-            await display_word_card(context, user_id, chat_id, word_data, message_id=message_id)
-        else:
-            await query.edit_message_text("Ошибка: слово не найдено.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]]))
+    word_data = word_repo.get_word_by_id(word_id)
+    if word_data:
+        word_dict = word_data.dict()
+        await display_word_card(context, user_id, chat_id, word_dict, message_id=message_id)
     else:
         await query.edit_message_text("Ошибка: слово не найдено.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]]))

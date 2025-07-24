@@ -9,7 +9,11 @@ from config import (
     CB_DICT_VIEW, CB_DICT_DELETE_MODE, CB_DICT_CONFIRM_DELETE, 
     CB_DICT_EXECUTE_DELETE, logger, DICT_WORDS_PER_PAGE
 )
-from services.database import db_read_query, db_write_query
+from dal.repositories import WordRepository, UserDictionaryRepository
+
+word_repo = WordRepository()
+user_dict_repo = UserDictionaryRepository()
+
 
 async def view_dictionary_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -41,19 +45,7 @@ async def view_dictionary_page_logic(
     query = update.callback_query
     user_id = query.from_user.id
     
-    # Запрос для получения (N+1) слов, чтобы определить, есть ли следующая страница
-    limit = DICT_WORDS_PER_PAGE + 1
-    offset = page * DICT_WORDS_PER_PAGE
-    sql_query = """
-        SELECT cw.word_id, cw.hebrew, t.translation_text
-        FROM cached_words cw
-        JOIN user_dictionary ud ON cw.word_id = ud.word_id
-        JOIN translations t ON cw.word_id = t.word_id
-        WHERE ud.user_id = ? AND t.is_primary = 1
-        ORDER BY ud.added_at DESC
-        LIMIT ? OFFSET ?
-    """
-    words_from_db = db_read_query(sql_query, (user_id, limit, offset), fetchall=True)
+    words_from_db = user_dict_repo.get_dictionary_page(user_id, page, DICT_WORDS_PER_PAGE)
     
     # Если мы только что удалили слово, убираем его из списка
     words = [w for w in words_from_db if w['word_id'] != exclude_word_id] if exclude_word_id else words_from_db
@@ -114,13 +106,13 @@ async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     
     _, _, word_id_str, page_str = query.data.split(':')
-    word_data = db_read_query("SELECT hebrew FROM cached_words WHERE word_id = ?", (word_id_str,), fetchone=True)
+    word_hebrew = word_repo.get_word_hebrew_by_id(int(word_id_str))
     
-    if not word_data:
+    if not word_hebrew:
         await query.edit_message_text("Ошибка: слово не найдено.")
         return
         
-    text = f"Вы уверены, что хотите удалить слово '{word_data['hebrew']}' из вашего словаря?"
+    text = f"Вы уверены, что хотите удалить слово '{word_hebrew}' из вашего словаря?"
     keyboard = [
         [InlineKeyboardButton("✅ Да, удалить", callback_data=f"{CB_DICT_EXECUTE_DELETE}:{word_id_str}:{page_str}")],
         [InlineKeyboardButton("❌ Нет, отмена", callback_data=f"{CB_DICT_DELETE_MODE}:{page_str}")]
@@ -136,10 +128,7 @@ async def execute_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     _, _, word_id_str, page_str = query.data.split(':')
     word_id, page = int(word_id_str), int(page_str)
     
-    db_write_query(
-        "DELETE FROM user_dictionary WHERE user_id = ? AND word_id = ?",
-        (query.from_user.id, word_id)
-    )
+    user_dict_repo.remove_word_from_dictionary(query.from_user.id, word_id)
     
     # Перерисовываем страницу словаря, исключая удаленное слово
     await view_dictionary_page_logic(update, context, page=page, deletion_mode=False, exclude_word_id=word_id)
