@@ -6,8 +6,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
 
-from ..config import logger, CB_DICT_VIEW, CB_TRAIN_MENU, CB_ADD, CB_DICT_CONFIRM_DELETE, CB_SHOW_VERB, CB_VIEW_CARD
-from ..services.database import db_read_query, db_write_query
+from config import logger, CB_DICT_VIEW, CB_TRAIN_MENU, CB_ADD, CB_DICT_CONFIRM_DELETE, CB_SHOW_VERB, CB_VIEW_CARD
+from services.database import db_read_query, db_write_query
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):

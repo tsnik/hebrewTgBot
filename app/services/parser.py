@@ -12,10 +12,10 @@ from urllib.parse import quote, urljoin
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from ..config import logger, PARSING_TIMEOUT
-from ..dal.repositories import WordRepository
-from ..utils import normalize_hebrew, parse_translations
-from ..services.database import DB_READ_ATTEMPTS, DB_READ_DELAY
+from config import logger, PARSING_TIMEOUT
+from dal.repositories import WordRepository
+from utils import normalize_hebrew, parse_translations
+from services.database import DB_READ_ATTEMPTS, DB_READ_DELAY
 
 # --- УПРАВЛЕНИЕ КОНКУРЕНТНЫМ ПАРСИНГОМ ---
 PARSING_EVENTS: Dict[str, asyncio.Event] = {}

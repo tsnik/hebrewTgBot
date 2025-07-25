@@ -3,9 +3,9 @@
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
-from ..services.database import db_read_query, db_write_query, db_transaction
+from services.database import db_read_query, db_write_query, db_transaction
 from .models import CachedWord, Translation, VerbConjugation
-from ..config import logger
+from config import logger
 
 
 class BaseRepository:
