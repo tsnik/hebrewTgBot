@@ -8,7 +8,7 @@ import time
 from typing import Callable, Optional, Dict, Any, List
 from collections.abc import Callable as CallableABC
 
-from config import DB_NAME, logger, DB_READ_ATTEMPTS, DB_READ_DELAY
+from ..config import DB_NAME, logger, DB_READ_ATTEMPTS, DB_READ_DELAY
 
 # --- ПОТОКОБЕЗОПАСНОСТЬ И ОЧЕРЕДЬ ЗАПИСИ В БД ---
 DB_WRITE_QUEUE = queue.Queue()
