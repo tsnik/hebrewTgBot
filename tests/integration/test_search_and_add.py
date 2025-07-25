@@ -28,16 +28,24 @@ async def test_search_and_add_flow_e2e(monkeypatch):
     mock_reply.message_id = 98765
     mock_update.message.reply_text.return_value = mock_reply
     
-    # --- 2. Подготовка мока для HTTP-запроса ---
+        # --- 2. Подготовка мока для HTTP-запроса ---
     with open("tests/fixtures/search_word.html", "r", encoding="utf-8") as f:
         html_content = f.read()
 
+    # Создаем мок для объекта ответа httpx
     mock_response = Mock()
-    type(mock_response).text = PropertyMock(return_value=html_content)
+    # Устанавливаем атрибут .text напрямую, чтобы избежать его преобразования в корутину.
+    mock_response.text = html_content
     mock_response.status_code = 200
+    # Парсер проверяет URL, чтобы определить, было ли прямое перенаправление на страницу слова.
+    # Наша фикстура - это и есть страница слова, поэтому мокируем URL соответствующим образом.
+    mock_response.url = "https://www.pealim.com/ru/dict/123-test/"
+    # raise_for_status - это обычный метод, а не корутина.
     mock_response.raise_for_status = Mock()
 
+    # Создаем мок для асинхронного клиента httpx
     mock_async_client = AsyncMock()
+    # Метод .get() должен возвращать наш подготовленный мок ответа.
     mock_async_client.get.return_value = mock_response
 
     monkeypatch.setattr("app.services.parser.httpx.AsyncClient", lambda **kwargs: mock_async_client)
