@@ -15,7 +15,6 @@ async def test_search_and_add_flow_e2e(monkeypatch):
     Этот тест НЕ мокает сервис парсинга, а мокает только HTTP-запрос.
     """
     # --- 1. Подготовка моков для Telegram ---
-    # ... (эта часть остается без изменений) ...
     mock_update = Mock()
     mock_context = AsyncMock()
     
@@ -28,25 +27,19 @@ async def test_search_and_add_flow_e2e(monkeypatch):
     mock_reply = AsyncMock()
     mock_reply.message_id = 98765
     mock_update.message.reply_text.return_value = mock_reply
-
-    # --- 2. Подготовка мока для HTTP-запроса (ИСПРАВЛЕННАЯ ЧАСТЬ) ---
+    
+    # --- 2. Подготовка мока для HTTP-запроса ---
     with open("tests/fixtures/search_word.html", "r", encoding="utf-8") as f:
         html_content = f.read()
 
-    # Создаем мок для объекта Response
     mock_response = Mock()
-    # Используем PropertyMock, чтобы .text вел себя как обычное свойство, а не корутина
     type(mock_response).text = PropertyMock(return_value=html_content)
     mock_response.status_code = 200
-    # Метод raise_for_status() у реального ответа не является async
     mock_response.raise_for_status = Mock()
 
-    # Создаем мок для клиента
     mock_async_client = AsyncMock()
-    # Настраиваем метод get() так, чтобы он возвращал наш подготовленный mock_response
     mock_async_client.get.return_value = mock_response
 
-    # Подменяем httpx.AsyncClient в модуле парсера
     monkeypatch.setattr("app.services.parser.httpx.AsyncClient", lambda **kwargs: mock_async_client)
 
     # --- 3. Вызываем обработчик ---
@@ -57,15 +50,12 @@ async def test_search_and_add_flow_e2e(monkeypatch):
     normalized_form = normalize_hebrew(user_message_text)
     new_word = word_repo.find_word_by_normalized_form(normalized_form)
     
-    # Теперь эта проверка должна пройти
     assert new_word is not None
-    # ... (остальные проверки) ...
     assert new_word.hebrew == "בדיקה"
     assert new_word.transcription == "bdika"
     assert "проверка" in new_word.translations[0].translation_text
 
-    # ... (остальная часть теста без изменений) ...
-    # --- 5. Проверяем, что карточка слова была отправлена пользователю ---
+    # --- 5. Проверяем, что карточка слова была отправлена ---
     mock_context.bot.edit_message_text.assert_called_once()
     _, call_kwargs = mock_context.bot.edit_message_text.call_args
     
@@ -93,4 +83,5 @@ async def test_search_and_add_flow_e2e(monkeypatch):
     _, final_card_kwargs = mock_context.bot.edit_message_text.call_args
     
     assert "уже в вашем словаре" in final_card_kwargs['text']
-    delete_button = final_card_kwargs['reply
+    delete_button = final_card_kwargs['reply_markup'].inline_keyboard[0][0]
+    assert "Удалить" in delete_button.text
