@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
 
-from config import (
+from ..config import (
     logger,
     TRAINING_MENU_STATE, FLASHCARD_SHOW, FLASHCARD_EVAL,
     AWAITING_VERB_ANSWER, VERB_TRAINER_NEXT_ACTION,
@@ -14,9 +14,9 @@ from config import (
     CB_SHOW_ANSWER, CB_EVAL_CORRECT, CB_EVAL_INCORRECT, CB_END_TRAINING,
     VERB_TRAINER_RETRY_ATTEMPTS
 )
-from services.database import db_read_query, db_write_query
-from utils import normalize_hebrew
-from handlers.common import main_menu
+from ..services.database import db_read_query, db_write_query
+from ..utils import normalize_hebrew
+from .common import main_menu
 
 # --- Вход в меню тренировок ---
 
