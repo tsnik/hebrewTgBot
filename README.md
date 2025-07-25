@@ -1,5 +1,7 @@
 # Telegram-бот "Помощник по ивриту" (Hebrew Helper Bot)
 
+[![codecov](https://codecov.io/github/tsnik/hebrewTgBot/graph/badge.svg?token=CZR8QAFVAB)](https://codecov.io/github/tsnik/hebrewTgBot)
+
 Это многофункциональный Telegram-бот, созданный для помощи в изучении иврита. Он сфокусирован на управлении личным словарем, интерактивных тренировках, глубоком изучении глаголов и грамматики. Уникальной особенностью является возможность совместного обучения и пополнения базы данных.
 
 ## ✨ Ключевые возможности (Features)
