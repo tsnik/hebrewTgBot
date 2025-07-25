@@ -247,7 +247,7 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
 
         if final_word_data:
             logger.info(f"--- Парсинг для '{search_word}' завершен УСПЕШНО. ---")
-            return 'ok', final_word_data.dict()
+            return 'ok', final_word_data.model_dump()
         else:
             logger.error(f"--- Парсинг для '{search_word}' завершен с ОШИБКОЙ БД (не удалось прочитать запись после сохранения). ---")
             return 'db_error', None
