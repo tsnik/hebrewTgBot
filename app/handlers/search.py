@@ -44,7 +44,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     word_data = word_repo.find_word_by_normalized_form(normalized_text)
     if word_data:
         # Pydantic модели нужно преобразовать в dict для display_word_card
-        word_dict = word_data.dict()
+        word_dict = word_data.model_dump()
         await display_word_card(context, user_id, chat_id, word_dict)
         return
 
@@ -75,7 +75,7 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
     
     word_data = word_repo.get_word_by_id(word_id)
     if word_data:
-        word_dict = word_data.dict()
+        word_dict = word_data.model_dump()
         # Передаем in_dictionary=True, чтобы функция знала, что слово уже добавлено
         await display_word_card(
             context,
@@ -133,7 +133,7 @@ async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     word_data = word_repo.get_word_by_id(word_id)
     if word_data:
-        word_dict = word_data.dict()
+        word_dict = word_data.model_dump()
         await display_word_card(context, user_id, chat_id, word_dict, message_id=message_id)
     else:
         await query.edit_message_text("Ошибка: слово не найдено.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]]))
