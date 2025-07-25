@@ -1,97 +1,103 @@
+# tests/conftest.py
 import pytest
 import asyncio
-from telegram.ext import Application
-from unittest.mock import AsyncMock, Mock, patch
-import pytest_asyncio
 import sqlite3
+import os
+from unittest.mock import AsyncMock, Mock, patch
 
-from app.services import database
+import pytest_asyncio
 
-from app.services.database import init_db, db_worker, DB_WRITE_QUEUE
+# Убедитесь, что импорты соответствуют вашей структуре проекта.
+# Если код в папке 'app', используйте 'from app import ...'
+from services import database
+import config
+
+TEST_USER_ID = 123456789
+TEST_CHAT_ID = 987654321
+
 
 @pytest.fixture(scope="session")
 def event_loop():
-    """Create an instance of the default event loop for each test session."""
+    """Создает экземпляр цикла событий по умолчанию для каждой тестовой сессии."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 
-
-class SynchronousQueue:
-    def __init__(self, connection):
-        self.connection = connection
-
-    def put(self, task):
-        # Если пришел сигнал остановки, ничего не делаем
-        if task is None:
-            return
-
-        query, params, *_ = task
-
-        cursor = self.connection.cursor()
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-        self.connection.commit()
-
-    def get(self): # Для совместимости, если кто-то вызовет
-        return None
-
-    def task_done(self): # Для совместимости
-        pass
-
-    def join(self): # Для совместимости
-        pass
-
-
 @pytest_asyncio.fixture(scope="function")
 def test_db(monkeypatch):
     """
-    Создает in-memory БД и подменяет очередь на синхронный мок.
-    Все вызовы db_write_query будут выполняться немедленно.
+    Создает единственное соединение с БД в памяти и перехватывает все
+    попытки создать новое соединение или закрыть существующее, используя
+    безопасный класс-обертку.
     """
-    con = sqlite3.connect(":memory:")
-    con.row_factory = sqlite3.Row
 
-    # 2. Подменяем реальную очередь на наш синхронный мок
-    sync_queue = SynchronousQueue(con)
-    monkeypatch.setattr(database, "DB_WRITE_QUEUE", sync_queue)
+    # 1. Создаем класс-обертку (прокси) для соединения с БД.
+    class MockConnection:
+        def __init__(self, real_connection):
+            self._real_conn = real_connection
 
-    # Мокируем только чтение, т.к. запись теперь идет через наш мок
-    def mock_db_read_query(query, params=None):
-        cursor = con.cursor()
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-        return cursor.fetchall()
+        def close(self):
+            """Перехватываем вызов close и ничего не делаем."""
+            pass
 
-    monkeypatch.setattr(database, "db_read_query", mock_db_read_query)
+        def __getattr__(self, name):
+            """Передаем все остальные вызовы (cursor, commit и т.д.) настоящему соединению."""
+            return getattr(self._real_conn, name)
 
-    # 3. Инициализируем схему БД (запрос на создание таблиц сразу выполнится)
+    # 2. Создаем настоящее соединение и оборачиваем его в наш прокси.
+    real_con = sqlite3.connect(":memory:", check_same_thread=False)
+    real_con.row_factory = sqlite3.Row
+    mock_con = MockConnection(real_con)
+
+    # 3. Перехватываем sqlite3.connect. Теперь любой код, который попытается
+    # создать соединение, вместо этого получит наш безопасный прокси-объект.
+    monkeypatch.setattr(sqlite3, "connect", lambda *args, **kwargs: mock_con)
+
+    # 4. Заменяем очередь записи, чтобы операции выполнялись немедленно и синхронно.
+    def execute_write_synchronously(task):
+        if task is None:
+            return
+        # Эта функция будет использовать наш прокси 'mock_con' через перехваченный sqlite3.connect
+        try:
+            if callable(task): # Обработка транзакций
+                cursor = mock_con.cursor()
+                cursor.execute("BEGIN")
+                task(cursor)
+                mock_con.commit()
+            else: # Обработка обычных запросов
+                query, params, is_many = task
+                cursor = mock_con.cursor()
+                if is_many:
+                    cursor.executemany(query, params)
+                else:
+                    cursor.execute(query, params)
+                mock_con.commit()
+        except sqlite3.Error as e:
+            print(f"DB-WRITE-MOCK-ERROR: {e}")
+            mock_con.rollback()
+            raise
+
+    mock_queue = Mock()
+    mock_queue.put.side_effect = execute_write_synchronously
+    monkeypatch.setattr(database, "DB_WRITE_QUEUE", mock_queue)
+
+    # 5. Патчим создание директорий, чтобы избежать ошибок с файловой системой.
+    monkeypatch.setattr(os, "makedirs", lambda *args, **kwargs: None)
+
+    # 6. Инициализируем схему БД.
     database.init_db()
 
-    yield con
+    yield real_con  # Предоставляем тесту настоящее соединение для проверок
 
-    con.close()
+    # 7. После того, как тест полностью завершился, закрываем настоящее соединение.
+    real_con.close()
 
-TEST_USER_ID = 123456789
 
 @pytest.fixture
-def app(test_db):
-    """Create a mock application for testing."""
-    application = Mock(spec=Application)
-    application.bot = AsyncMock()
-    return application
-
-@pytest_asyncio.fixture(scope="function")
-async def init_db_for_test(test_db):
-    """
-    Initializes the database for a test function.
-    This is a combination of test_db and an async init.
-    """
-    # test_db fixture already patches DB_NAME and calls init_db()
-    # No need to do anything else here, just depend on test_db
-    yield
+def mock_context():
+    """Создает мок объекта context для Telegram."""
+    context = AsyncMock()
+    context.bot.send_message.return_value = AsyncMock(message_id=111)
+    context.bot.edit_message_text.return_value = AsyncMock(message_id=111)
+    return context
