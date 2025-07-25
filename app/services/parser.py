@@ -60,10 +60,11 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
         
         logger.info("--> parse_verb_page: Поиск корня и биньяна...")
         data['root'], data['binyan'] = None, None
-        for p in main_header.find_next_siblings('p'):
-            if 'глагол' in p.text.lower():
+        for p in main_header.parent.find_all('p'):
+            if 'биньян' in p.text.lower():
                 binyan_tag = p.find('b')
-                if binyan_tag: data['binyan'] = binyan_tag.text.strip()
+                if binyan_tag and binyan_tag.next_sibling:
+                    data['binyan'] = binyan_tag.next_sibling.strip()
             if 'корень' in p.text.lower():
                 root_tag = p.find('span', class_='menukad')
                 if root_tag: data['root'] = root_tag.text.strip()

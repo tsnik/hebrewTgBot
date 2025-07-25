@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from config import (
-    CB_DICT_VIEW, CB_DICT_DELETE_MODE, CB_DICT_CONFIRM_DELETE, 
+    CB_DICT_VIEW, CB_DICT_DELETE_MODE, CB_DICT_CONFIRM_DELETE,
     CB_DICT_EXECUTE_DELETE, logger, DICT_WORDS_PER_PAGE
 )
 from dal.repositories import WordRepository, UserDictionaryRepository
