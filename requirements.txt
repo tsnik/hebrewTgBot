@@ -4,5 +4,3 @@ beautifulsoup4
 python-dotenv
 pydantic
 yoyo-migrations
-pytest
-pytest-asyncio
