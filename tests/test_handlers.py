@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from app.handlers.common import start, main_menu
 from app.handlers.dictionary import view_dictionary_page_handler, confirm_delete_word, execute_delete_word
 from app.handlers.search import handle_text_message, add_word_to_dictionary, show_verb_conjugations
-from app.handlers.training import training_menu, start_flashcard_training, show_answer, handle_self_evaluation
+from app.handlers.training import training_menu, start_flashcard_training, show_answer, handle_self_evaluation, start_verb_trainer
 from app.services.parser import fetch_and_cache_word_data
 
 @pytest.mark.asyncio
@@ -43,6 +43,38 @@ async def test_view_dictionary_page_handler():
 
     update.callback_query.edit_message_text.assert_called_once()
     assert "Ваш словарь пуст" in update.callback_query.edit_message_text.call_args.args[0]
+
+@pytest.mark.asyncio
+async def test_start_verb_trainer_no_conjugations():
+    update = AsyncMock()
+    update.callback_query = AsyncMock()
+    context = MagicMock()
+
+    with patch('app.handlers.training.db_read_query') as mock_read:
+        # Simulate finding a verb, but no conjugations
+        mock_read.side_effect = [
+            {'word_id': 1, 'hebrew': 'глагол'}, None,
+            {'word_id': 1, 'hebrew': 'глагол'}, None,
+            {'word_id': 1, 'hebrew': 'глагол'}, None,
+        ]
+        await start_verb_trainer(update, context)
+
+    update.callback_query.edit_message_text.assert_called_once()
+    assert "Не удалось найти подходящий глагол" in update.callback_query.edit_message_text.call_args.args[0]
+
+@pytest.mark.asyncio
+async def test_start_flashcard_training_no_words():
+    update = AsyncMock()
+    update.callback_query = AsyncMock()
+    update.callback_query.data = "train:he_ru"
+    context = MagicMock()
+
+    with patch('app.handlers.training.db_read_query') as mock_read:
+        mock_read.return_value = []
+        await start_flashcard_training(update, context)
+
+    update.callback_query.edit_message_text.assert_called_once()
+    assert "В словаре нет слов" in update.callback_query.edit_message_text.call_args.args[0]
 
 @pytest.mark.asyncio
 async def test_add_word_to_dictionary():

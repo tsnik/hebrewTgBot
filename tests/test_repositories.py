@@ -154,3 +154,25 @@ def test_user_dictionary_repository(mock_db_connection):
     # Test remove_word_from_dictionary
     user_repo.remove_word_from_dictionary(user_id, word_id)
     assert user_repo.is_word_in_dictionary(user_id, word_id) is False
+
+def test_word_repository_transaction_rollback(mock_db_connection):
+    repo = WordRepository()
+
+    translations = [{'translation_text': 'to write', 'context_comment': None, 'is_primary': True}]
+    # This will cause a TypeError because the items are not dictionaries
+    conjugations = [1, 2, 3]
+
+    word_id = repo.create_cached_word(
+        hebrew='לִכְתּוֹב',
+        normalized_hebrew='לכתוב',
+        transcription='likhtov',
+        is_verb=True,
+        root='כ-ת-ב',
+        binyan='פעל',
+        translations=translations,
+        conjugations=conjugations
+    )
+    assert word_id is None
+
+    found_word = repo.find_word_by_normalized_form('לכתוב')
+    assert found_word is None
