@@ -1,3 +1,6 @@
 fixes:
   #- "^((?!app/).+\\.py)$::app/\\1"
-  - '::app/'
+  - "::app/"
+
+codecov:
+  disable_default_path_fixes: true
