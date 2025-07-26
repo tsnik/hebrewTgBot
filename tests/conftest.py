@@ -1,5 +1,6 @@
 import pytest
 import sqlite3
+import uuid
 from yoyo import get_backend, read_migrations
 from yoyo.backends import SQLiteBackend
 import dal.unit_of_work
@@ -24,7 +25,7 @@ def memory_db(monkeypatch_session):
     handle shared in-memory databases via URI, making it the most robust solution.
     """
     # Этот URI будет использоваться и в нашем патче, и в приложении
-    db_uri_for_app = "file::memdb1?mode=memory&cache=shared"
+    db_uri_for_app = f"file:mem_{uuid.uuid4()}?mode=memory&cache=shared"
     
     # Этот URI мы передаем в yoyo, чтобы он выбрал правильный бэкенд
     db_uri_for_yoyo = f"sqlite:///{db_uri_for_app}"
