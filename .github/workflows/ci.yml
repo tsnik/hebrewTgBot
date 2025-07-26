@@ -35,9 +35,4 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        file: coverage.xml
         verbose: true
-        slug: tsnik/hebrewTgBot
-        branch: ${{ github.head_ref || github.ref_name }}
-        name: github-actions-coverage
-        flags: app
