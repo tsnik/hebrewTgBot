@@ -33,14 +33,15 @@ class AbstractUnitOfWork(abc.ABC):
         raise NotImplementedError
 
 
+from services.connection import write_db_manager
+
 class UnitOfWork(AbstractUnitOfWork):
     def __init__(self, db_name: str = DB_NAME):
-        self.db_name = db_name
+        self.connection_manager = write_db_manager
         self.connection: Optional[sqlite3.Connection] = None
 
     def __enter__(self) -> AbstractUnitOfWork:
-        self.connection = sqlite3.connect(self.db_name)
-        self.connection.row_factory = sqlite3.Row
+        self.connection = self.connection_manager.__enter__()
         self.words = WordRepository(self.connection)
         self.user_dictionary = UserDictionaryRepository(self.connection)
         return super().__enter__()

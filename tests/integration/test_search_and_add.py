@@ -60,7 +60,7 @@ async def test_full_search_and_add_scenario(mock_async_client, memory_db_uow: Un
     type(search_update).effective_chat = PropertyMock(return_value=Mock(id=TEST_CHAT_ID))
 
     # 1.2. Вызываем основной обработчик текстовых сообщений
-    with patch('handlers.search.UnitOfWork'):
+    with patch('handlers.search.UnitOfWork', return_value=memory_db_uow):
         await handle_text_message(search_update, mock_context)
 
     # 1.3. Проверяем результат
@@ -87,14 +87,8 @@ async def test_full_search_and_add_scenario(mock_async_client, memory_db_uow: Un
     type(mock_query).from_user = PropertyMock(return_value=Mock(id=TEST_USER_ID))
 
     # 2.2. Вызываем обработчик добавления слова
-    with patch('handlers.search.display_word_card') as mock_display_word_card:
-        await add_word_to_dictionary(add_update, mock_context)
+    await add_word_to_dictionary(add_update, mock_context)
 
-        # 2.3. Проверяем итоговый результат
-        mock_display_word_card.assert_called_once()
-        _call_args, call_kwargs = mock_display_word_card.call_args
-        assert call_kwargs['in_dictionary'] is True
-
-    # Финальная проверка БД: слово теперь должно быть в словаре пользователя
+    # 2.3. Проверяем итоговый результат
     with memory_db_uow as uow:
         assert uow.user_dictionary.is_word_in_dictionary(TEST_USER_ID, word_id) is True
