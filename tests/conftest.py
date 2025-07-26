@@ -5,8 +5,9 @@ from yoyo.backends import SQLiteBackend
 import dal.unit_of_work
 import services.connection
 import config
+from services.connection import DatabaseConnectionManager
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='function')
 def monkeypatch_session(request):
     """A session-scoped monkeypatch to use in session-scoped fixtures."""
     from _pytest.monkeypatch import MonkeyPatch
@@ -14,7 +15,7 @@ def monkeypatch_session(request):
     yield mpatch
     mpatch.undo()
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def memory_db(monkeypatch_session):
     """
     Fixture to set up a shared in-memory SQLite database for the test session.
@@ -82,6 +83,10 @@ def patch_db_name(monkeypatch, memory_db):
     monkeypatch.setattr(services.connection, "DB_NAME", memory_db)
     monkeypatch.setattr(config, "DB_NAME", memory_db)
 
-    # 2. КЛЮЧЕВОЙ МОМЕНТ: Патчим атрибут в уже созданных экземплярах
-    monkeypatch.setattr(services.connection.write_db_manager, "db_name", memory_db)
-    monkeypatch.setattr(services.connection.read_db_manager, "db_name", memory_db)
+    # Шаг 2: КЛЮЧЕВОЕ ИЗМЕНЕНИЕ. Заменяем старые синглтоны новыми.
+    # Теперь любой код, импортирующий write_db_manager, получит наш
+    # новый, чистый экземпляр, подключенный к изолированной БД этого теста.
+    monkeypatch.setattr(
+        'dal.unit_of_work.write_db_manager',
+        DatabaseConnectionManager(db_name=memory_db, read_only=False)
+    )
