@@ -36,3 +36,7 @@ jobs:
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         fail_ci_if_error: true
+    - name: Debug coverage.xml
+      run: |
+        cat coverage.xml
+        ls -laR app
