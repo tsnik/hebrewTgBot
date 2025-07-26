@@ -6,7 +6,7 @@ from datetime import datetime
 from dal.unit_of_work import UnitOfWork
 
 @pytest.mark.asyncio
-async def test_add_word_to_dictionary(memory_db_uow: UnitOfWork):
+async def test_add_word_to_dictionary(memory_db):
     """Test adding a word to the dictionary."""
     update = Mock()
     update.callback_query = AsyncMock()
@@ -15,10 +15,20 @@ async def test_add_word_to_dictionary(memory_db_uow: UnitOfWork):
     context = Mock()
     context.bot = AsyncMock()
 
-    word = CachedWord(word_id=1, hebrew="מילה", normalized_hebrew="מילה", transcription="mila", is_verb=False, root="", binyan="", fetched_at=datetime.now(), translations=[Translation(translation_id=1, word_id=1, translation_text="word", context_comment="", is_primary=True)])
+    with UnitOfWork() as uow:
+        uow.words.create_cached_word(
+            hebrew='מילה',
+            normalized_hebrew='מילה',
+            transcription='mila',
+            is_verb=False,
+            root=None,
+            binyan=None,
+            translations=[{'translation_text': 'word', 'is_primary': True}],
+            conjugations=[]
+        )
+        uow.commit()
 
-    with patch('handlers.search.UnitOfWork') as mock_uow:
-        mock_uow.return_value.__enter__.return_value.words.get_word_by_id.return_value = word
+    with patch('handlers.search.display_word_card'):
         await add_word_to_dictionary(update, context)
 
     update.callback_query.answer.assert_called_once_with("Добавлено!")

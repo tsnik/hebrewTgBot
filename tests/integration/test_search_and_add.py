@@ -9,7 +9,8 @@ from dal.unit_of_work import UnitOfWork
 from dal.repositories import UserDictionaryRepository
 
 # Используем константы из conftest для консистентности
-from .conftest import TEST_USER_ID, TEST_CHAT_ID
+TEST_USER_ID = 123456789
+TEST_CHAT_ID = 987654321
 
 # Мок HTML-ответа от pealim.com для слова "בדיקה"
 # Он содержит минимально необходимую структуру для успешного парсинга
@@ -26,7 +27,7 @@ MOCK_PEALIM_HTML = """
 
 @pytest.mark.asyncio
 @patch("services.parser.httpx.AsyncClient")  # Патчим HTTP-клиент в модуле парсера
-async def test_full_search_and_add_scenario(mock_async_client, memory_db_uow: UnitOfWork, mock_context):
+async def test_full_search_and_add_scenario(mock_async_client, memory_db, mock_context):
     """
     Полный интеграционный тест сценария:
     1. Пользователь ищет слово, которого нет в кэше.
@@ -60,14 +61,24 @@ async def test_full_search_and_add_scenario(mock_async_client, memory_db_uow: Un
     type(search_update).effective_chat = PropertyMock(return_value=Mock(id=TEST_CHAT_ID))
 
     # 1.2. Вызываем основной обработчик текстовых сообщений
-    with patch('handlers.search.UnitOfWork', return_value=memory_db_uow):
+    with patch('handlers.search.display_word_card') as mock_display_word_card:
         await handle_text_message(search_update, mock_context)
 
-    # 1.3. Проверяем результат
-    # Убеждаемся, что сообщение "Ищу..." было сначала отправлено
-    search_update.message.reply_text.assert_called_once_with("🔎 Ищу слово во внешнем словаре...")
+        # 1.3. Проверяем результат
+        # Убеждаемся, что сообщение "Ищу..." было сначала отправлено
+        search_update.message.reply_text.assert_called_once_with("🔎 Ищу слово во внешнем словаре...")
 
-    with memory_db_uow as uow:
+        # Проверяем, что display_word_card была вызвана
+        mock_display_word_card.assert_called_once()
+
+        # Получаем аргументы вызова display_word_card для детальной проверки
+        _call_args, call_kwargs = mock_display_word_card.call_args
+        word_data = call_kwargs['word_data']
+
+        # Проверяем наличие кнопки "Добавить"
+        assert word_data['hebrew'] == "בדיקה"
+
+    with UnitOfWork() as uow:
         word = uow.words.find_word_by_normalized_form("בדיקה")
         assert word is not None
         word_id = word.word_id
@@ -87,8 +98,14 @@ async def test_full_search_and_add_scenario(mock_async_client, memory_db_uow: Un
     type(mock_query).from_user = PropertyMock(return_value=Mock(id=TEST_USER_ID))
 
     # 2.2. Вызываем обработчик добавления слова
-    await add_word_to_dictionary(add_update, mock_context)
+    with patch('handlers.search.display_word_card') as mock_display_word_card:
+        await add_word_to_dictionary(add_update, mock_context)
 
-    # 2.3. Проверяем итоговый результат
-    with memory_db_uow as uow:
+        # 2.3. Проверяем итоговый результат
+        mock_display_word_card.assert_called_once()
+        _call_args, call_kwargs = mock_display_word_card.call_args
+        assert call_kwargs['in_dictionary'] is True
+
+    # Финальная проверка БД: слово теперь должно быть в словаре пользователя
+    with UnitOfWork() as uow:
         assert uow.user_dictionary.is_word_in_dictionary(TEST_USER_ID, word_id) is True
