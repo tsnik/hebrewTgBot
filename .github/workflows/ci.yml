@@ -31,12 +31,13 @@ jobs:
         # Запускаем юнит-тесты, создавая initial .coverage file
         python -m pytest --cov=app --cov-report=xml tests/
 
-    - name: Upload combined coverage to Codecov
-      uses: codecov/codecov-action@v3
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        fail_ci_if_error: true
-    - name: Debug coverage.xml
-      run: |
-        cat coverage.xml
-        ls -laR app
+        file: coverage.xml
+        verbose: true
+        slug: tsnik/hebrewTgBot
+        branch: ${{ github.head_ref || github.ref_name }}
+        name: github-actions-coverage
+        flags: app
