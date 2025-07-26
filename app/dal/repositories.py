@@ -2,17 +2,15 @@
 
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import sqlite3
 
-from services.database import db_read_query, db_write_query, db_transaction
-from .models import CachedWord, Translation, VerbConjugation
+from dal.models import CachedWord, Translation, VerbConjugation
 from config import logger
 
 
 class BaseRepository:
-    def __init__(self):
-        self._db_read = db_read_query
-        self._db_write = db_write_query
-        self._db_transaction = db_transaction
+    def __init__(self, connection: sqlite3.Connection):
+        self.connection = connection
 
     def _row_to_model(self, row: Dict[str, Any], model_class):
         return model_class(**row) if row else None
@@ -24,7 +22,9 @@ class BaseRepository:
 class WordRepository(BaseRepository):
     def get_word_by_id(self, word_id: int) -> Optional[CachedWord]:
         query = "SELECT * FROM cached_words WHERE word_id = ?"
-        word_data = self._db_read(query, (word_id,), fetchone=True)
+        cursor = self.connection.cursor()
+        cursor.execute(query, (word_id,))
+        word_data = cursor.fetchone()
         if not word_data:
             return None
 
@@ -35,26 +35,50 @@ class WordRepository(BaseRepository):
 
     def get_translations_for_word(self, word_id: int) -> List[Translation]:
         query = "SELECT * FROM translations WHERE word_id = ? ORDER BY is_primary DESC"
-        translations_data = self._db_read(query, (word_id,), fetchall=True)
+        cursor = self.connection.cursor()
+        cursor.execute(query, (word_id,))
+        translations_data = cursor.fetchall()
         return self._rows_to_models(translations_data, Translation)
 
     def get_conjugations_for_word(self, word_id: int) -> List[VerbConjugation]:
         query = "SELECT * FROM verb_conjugations WHERE word_id = ? ORDER BY id"
-        conjugations_data = self._db_read(query, (word_id,), fetchall=True)
+        cursor = self.connection.cursor()
+        cursor.execute(query, (word_id,))
+        conjugations_data = cursor.fetchall()
         return self._rows_to_models(conjugations_data, VerbConjugation)
 
+    def get_random_verb_for_training(self, user_id: int) -> Optional[Dict[str, Any]]:
+        query = """
+            SELECT cw.*
+            FROM cached_words cw
+            JOIN user_dictionary ud ON cw.word_id = ud.word_id
+            WHERE ud.user_id = ? AND cw.is_verb = 1
+            ORDER BY RANDOM()
+            LIMIT 1
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id,))
+        return cursor.fetchone()
+
+    def get_random_conjugation_for_word(self, word_id: int) -> Optional[Dict[str, Any]]:
+        query = "SELECT * FROM verb_conjugations WHERE word_id = ? ORDER BY RANDOM() LIMIT 1"
+        cursor = self.connection.cursor()
+        cursor.execute(query, (word_id,))
+        return cursor.fetchone()
+
     def find_word_by_normalized_form(self, normalized_word: str) -> Optional[CachedWord]:
+        cursor = self.connection.cursor()
         word_id = None
 
-        # 1. Поиск по формам глаголов
         conjugation_query = "SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?"
-        conjugation = self._db_read(conjugation_query, (normalized_word,), fetchone=True)
+        cursor.execute(conjugation_query, (normalized_word,))
+        conjugation = cursor.fetchone()
         if conjugation:
             word_id = conjugation['word_id']
         else:
-            # 2. Поиск по каноническим формам
             word_query = "SELECT word_id FROM cached_words WHERE normalized_hebrew = ?"
-            word_data_row = self._db_read(word_query, (normalized_word,), fetchone=True)
+            cursor.execute(word_query, (normalized_word,))
+            word_data_row = cursor.fetchone()
             if word_data_row:
                 word_id = word_data_row['word_id']
 
@@ -65,7 +89,9 @@ class WordRepository(BaseRepository):
 
     def get_word_hebrew_by_id(self, word_id: int) -> Optional[str]:
         query = "SELECT hebrew FROM cached_words WHERE word_id = ?"
-        result = self._db_read(query, (word_id,), fetchone=True)
+        cursor = self.connection.cursor()
+        cursor.execute(query, (word_id,))
+        result = cursor.fetchone()
         return result['hebrew'] if result else None
 
     def create_cached_word(
@@ -78,69 +104,62 @@ class WordRepository(BaseRepository):
         binyan: Optional[str],
         translations: List[Dict[str, Any]],
         conjugations: List[Dict[str, Any]]
-    ) -> Optional[int]:
+    ) -> int:
+        cursor = self.connection.cursor()
 
-        def transaction_logic(cursor):
-            # 1. Вставляем основное слово
-            word_query = """
-                INSERT INTO cached_words
-                (hebrew, normalized_hebrew, transcription, is_verb, root, binyan, fetched_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+        word_query = """
+            INSERT INTO cached_words
+            (hebrew, normalized_hebrew, transcription, is_verb, root, binyan, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        cursor.execute(word_query, (
+            hebrew, normalized_hebrew, transcription, is_verb, root, binyan, datetime.now()
+        ))
+        word_id = cursor.lastrowid
+        if not word_id:
+            raise Exception("Failed to get last row id for new word.")
+
+        if translations:
+            translations_to_insert = [
+                (word_id, t['translation_text'], t.get('context_comment'), t['is_primary'])
+                for t in translations
+            ]
+            translations_query = """
+                INSERT INTO translations (word_id, translation_text, context_comment, is_primary)
+                VALUES (?, ?, ?, ?)
             """
-            cursor.execute(word_query, (
-                hebrew, normalized_hebrew, transcription, is_verb, root, binyan, datetime.now()
-            ))
-            word_id = cursor.lastrowid
-            if not word_id:
-                raise Exception("Failed to get last row id for new word.")
+            cursor.executemany(translations_query, translations_to_insert)
 
-            # 2. Вставляем переводы
-            if translations:
-                translations_to_insert = [
-                    (word_id, t['translation_text'], t.get('context_comment'), t['is_primary'])
-                    for t in translations
-                ]
-                translations_query = """
-                    INSERT INTO translations (word_id, translation_text, context_comment, is_primary)
-                    VALUES (?, ?, ?, ?)
-                """
-                cursor.executemany(translations_query, translations_to_insert)
+        if conjugations:
+            conjugations_to_insert = [
+                (word_id, c['tense'], c['person'], c['hebrew_form'], c['normalized_hebrew_form'], c['transcription'])
+                for c in conjugations
+            ]
+            conjugations_query = """
+                INSERT INTO verb_conjugations
+                (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """
+            cursor.executemany(conjugations_query, conjugations_to_insert)
 
-            # 3. Вставляем спряжения
-            if conjugations:
-                conjugations_to_insert = [
-                    (word_id, c['tense'], c['person'], c['hebrew_form'], c['normalized_hebrew_form'], c['transcription'])
-                    for c in conjugations
-                ]
-                conjugations_query = """
-                    INSERT INTO verb_conjugations
-                    (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """
-                cursor.executemany(conjugations_query, conjugations_to_insert)
-
-            # Возвращаем word_id из транзакции
-            # Прямой возврат значения из функции транзакции невозможен,
-            # поэтому используем трюк с mutable объектом (list) для его передачи.
-            result_container[0] = word_id
-
-        result_container = [None]
-        try:
-            self._db_transaction(transaction_logic)
-            return result_container[0]
-        except Exception as e:
-            logger.error(f"Error in transaction: {e}", exc_info=True)
-            return None
+        return word_id
 
 
 class UserDictionaryRepository(BaseRepository):
+    def add_user(self, user_id: int, first_name: str, username: Optional[str]):
+        query = "INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)"
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, first_name, username))
+
     def add_word_to_dictionary(self, user_id: int, word_id: int):
         query = "INSERT OR IGNORE INTO user_dictionary (user_id, word_id, next_review_at) VALUES (?, ?, ?)"
-        self._db_write(query, (user_id, word_id, datetime.now()))
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, word_id, datetime.now()))
 
     def remove_word_from_dictionary(self, user_id: int, word_id: int):
         query = "DELETE FROM user_dictionary WHERE user_id = ? AND word_id = ?"
-        self._db_write(query, (user_id, word_id))
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, word_id))
 
     def get_dictionary_page(self, user_id: int, page: int, page_size: int) -> List[Dict[str, Any]]:
         limit = page_size + 1
@@ -154,9 +173,38 @@ class UserDictionaryRepository(BaseRepository):
             ORDER BY ud.added_at DESC
             LIMIT ? OFFSET ?
         """
-        return self._db_read(query, (user_id, limit, offset), fetchall=True)
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, limit, offset))
+        return cursor.fetchall()
 
     def is_word_in_dictionary(self, user_id: int, word_id: int) -> bool:
         query = "SELECT 1 FROM user_dictionary WHERE user_id = ? AND word_id = ?"
-        result = self._db_read(query, (user_id, word_id), fetchone=True)
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, word_id))
+        result = cursor.fetchone()
         return result is not None
+
+    def get_user_words_for_training(self, user_id: int, limit: int) -> List[Dict[str, Any]]:
+        query = """
+            SELECT cw.*, t.translation_text
+            FROM cached_words cw
+            JOIN user_dictionary ud ON cw.word_id = ud.word_id
+            JOIN translations t ON cw.word_id = t.word_id
+            WHERE ud.user_id = ? AND cw.is_verb = 0 AND t.is_primary = 1
+            ORDER BY ud.next_review_at ASC
+            LIMIT ?
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, limit))
+        return cursor.fetchall()
+
+    def get_srs_level(self, user_id: int, word_id: int) -> Optional[Dict[str, Any]]:
+        query = "SELECT srs_level FROM user_dictionary WHERE user_id = ? AND word_id = ?"
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, word_id))
+        return cursor.fetchone()
+
+    def update_srs_level(self, srs_level: int, next_review_at: datetime, user_id: int, word_id: int):
+        query = "UPDATE user_dictionary SET srs_level = ?, next_review_at = ? WHERE user_id = ? AND word_id = ?"
+        cursor = self.connection.cursor()
+        cursor.execute(query, (srs_level, next_review_at, user_id, word_id))

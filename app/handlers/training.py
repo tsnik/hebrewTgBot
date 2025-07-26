@@ -14,7 +14,7 @@ from config import (
     CB_SHOW_ANSWER, CB_EVAL_CORRECT, CB_EVAL_INCORRECT, CB_END_TRAINING,
     VERB_TRAINER_RETRY_ATTEMPTS
 )
-from services.database import db_read_query, db_write_query
+from dal.unit_of_work import UnitOfWork
 from utils import normalize_hebrew
 from handlers.common import main_menu
 
@@ -31,8 +31,6 @@ async def training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         [InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]
     ]
     
-    # --- НАЧАЛО ИЗМЕНЕНИЯ ---
-    # Разделяем логику для редактирования и отправки нового сообщения
     if query:
         await query.answer()
         await query.edit_message_text(
@@ -40,14 +38,11 @@ async def training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
-        # Этот блок кода может понадобиться, если мы будем вызывать
-        # training_menu не через кнопку, а командой.
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text="Выберите режим тренировки:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
         
     return TRAINING_MENU_STATE
 
@@ -59,15 +54,8 @@ async def start_flashcard_training(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
     context.user_data['training_mode'] = query.data
     
-    sql_query = """
-        SELECT cw.*, t.translation_text
-        FROM cached_words cw
-        JOIN user_dictionary ud ON cw.word_id = ud.word_id
-        JOIN translations t ON cw.word_id = t.word_id
-        WHERE ud.user_id = ? AND cw.is_verb = 0 AND t.is_primary = 1
-        ORDER BY ud.next_review_at ASC LIMIT 10
-    """
-    words = db_read_query(sql_query, (query.from_user.id,), fetchall=True)
+    with UnitOfWork() as uow:
+        words = uow.user_dictionary.get_user_words_for_training(query.from_user.id, 10)
 
     if not words:
         await query.edit_message_text(
@@ -136,23 +124,22 @@ async def handle_self_evaluation(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     word = context.user_data['words'][context.user_data['idx']]
     
-    srs_data = db_read_query("SELECT srs_level FROM user_dictionary WHERE user_id = ? AND word_id = ?", (query.from_user.id, word['word_id']), fetchone=True)
-    srs_level = srs_data['srs_level'] if srs_data else 0
+    with UnitOfWork() as uow:
+        srs_data = uow.user_dictionary.get_srs_level(query.from_user.id, word['word_id'])
+        srs_level = srs_data['srs_level'] if srs_data else 0
 
-    if query.data == CB_EVAL_CORRECT:
-        context.user_data['correct'] += 1
-        srs_level += 1
-    else:
-        srs_level = 0
-    
-    srs_intervals = [0, 1, 3, 7, 14, 30, 90]
-    days_to_add = srs_intervals[min(srs_level, len(srs_intervals) - 1)]
-    next_review_date = datetime.now() + timedelta(days=days_to_add)
+        if query.data == CB_EVAL_CORRECT:
+            context.user_data['correct'] += 1
+            srs_level += 1
+        else:
+            srs_level = 0
 
-    db_write_query(
-        "UPDATE user_dictionary SET srs_level = ?, next_review_at = ? WHERE user_id = ? AND word_id = ?",
-        (srs_level, next_review_date, query.from_user.id, word['word_id'])
-    )
+        srs_intervals = [0, 1, 3, 7, 14, 30, 90]
+        days_to_add = srs_intervals[min(srs_level, len(srs_intervals) - 1)]
+        next_review_date = datetime.now() + timedelta(days=days_to_add)
+
+        uow.user_dictionary.update_srs_level(srs_level, next_review_date, query.from_user.id, word['word_id'])
+        uow.commit()
 
     context.user_data['idx'] += 1
     return await show_next_card(update, context)
@@ -168,24 +155,22 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = query.from_user.id
     verb, conjugation = None, None
 
-    for i in range(VERB_TRAINER_RETRY_ATTEMPTS):
-        verb_candidate = db_read_query(
-            "SELECT cw.* FROM cached_words cw JOIN user_dictionary ud ON cw.word_id = ud.word_id WHERE ud.user_id = ? AND cw.is_verb = 1 ORDER BY RANDOM() LIMIT 1",
-            (user_id,), fetchone=True
-        )
-        if not verb_candidate:
-            await query.edit_message_text(
-                "В вашем словаре нет глаголов для тренировки.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data=CB_TRAIN_MENU)]])
-            )
-            return TRAINING_MENU_STATE
+    with UnitOfWork() as uow:
+        for i in range(VERB_TRAINER_RETRY_ATTEMPTS):
+            verb_candidate = uow.words.get_random_verb_for_training(user_id)
+            if not verb_candidate:
+                await query.edit_message_text(
+                    "В вашем словаре нет глаголов для тренировки.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data=CB_TRAIN_MENU)]])
+                )
+                return TRAINING_MENU_STATE
 
-        conjugation_candidate = db_read_query("SELECT * FROM verb_conjugations WHERE word_id = ? ORDER BY RANDOM() LIMIT 1", (verb_candidate['word_id'],), fetchone=True)
-        if conjugation_candidate:
-            verb, conjugation = verb_candidate, conjugation_candidate
-            break
-        else:
-            logger.warning(f"Ошибка целостности данных: у глагола {verb_candidate['hebrew']} (id: {verb_candidate['word_id']}) нет спряжений. Попытка {i+1}/{VERB_TRAINER_RETRY_ATTEMPTS}")
+            conjugation_candidate = uow.words.get_random_conjugation_for_word(verb_candidate['word_id'])
+            if conjugation_candidate:
+                verb, conjugation = verb_candidate, conjugation_candidate
+                break
+            else:
+                logger.warning(f"Ошибка целостности данных: у глагола {verb_candidate['hebrew']} (id: {verb_candidate['word_id']}) нет спряжений. Попытка {i+1}/{VERB_TRAINER_RETRY_ATTEMPTS}")
 
     if not verb or not conjugation:
         await query.edit_message_text(
@@ -216,10 +201,9 @@ async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     else:
         reply_text = f"❌ Ошибка.\n\nПравильный ответ: *{correct_answer['hebrew_form']}* [{correct_answer['transcription']}]"
     
-    db_write_query(
-        "UPDATE user_dictionary SET next_review_at = ? WHERE user_id = ? AND word_id = ?",
-        (datetime.now() + timedelta(days=1), update.effective_user.id, correct_answer['word_id'])
-    )
+    with UnitOfWork() as uow:
+        uow.user_dictionary.update_srs_level(0, datetime.now() + timedelta(days=1), update.effective_user.id, correct_answer['word_id'])
+        uow.commit()
     
     keyboard = [
         [InlineKeyboardButton("🔥 Продолжить", callback_data=CB_VERB_TRAINER_START)],
@@ -237,9 +221,6 @@ async def end_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     query = update.callback_query
     await query.answer()
 
-    # --- НАЧАЛО ИЗМЕНЕНИЯ ---
-    # Вместо вызова training_menu, сразу редактируем сообщение, показывая меню.
-    # Это более чистое решение.
     keyboard = [
         [InlineKeyboardButton("🇮🇱 → 🇷🇺 (Иврит → Русский)", callback_data=CB_TRAIN_HE_RU)],
         [InlineKeyboardButton("🇷🇺 → 🇮🇱 (Русский → Иврит)", callback_data=CB_TRAIN_RU_HE)],
@@ -250,6 +231,5 @@ async def end_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         text="Тренировка прервана. Выберите новый режим:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-    # --- КОНЕЦ ИЗМЕНЕНИЯ ---
     
     return TRAINING_MENU_STATE

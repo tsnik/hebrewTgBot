@@ -1,6 +1,6 @@
 import pytest
 from bs4 import BeautifulSoup
-from app.services.parser import parse_verb_page, parse_noun_or_adjective_page
+from services.parser import parse_verb_page, parse_noun_or_adjective_page
 
 # Mock HTML for verb page
 verb_html = """
