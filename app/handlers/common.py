@@ -7,17 +7,16 @@ from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
 
 from config import logger, CB_DICT_VIEW, CB_TRAIN_MENU, CB_ADD, CB_DICT_CONFIRM_DELETE, CB_SHOW_VERB, CB_VIEW_CARD
-from services.database import db_read_query, db_write_query
+from dal.unit_of_work import UnitOfWork
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start."""
     user = update.effective_user
-    # Добавляем пользователя в БД, если его там еще нет
-    db_write_query(
-        "INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)",
-        (user.id, user.first_name, user.username)
-    )
+    with UnitOfWork() as uow:
+        uow.user_dictionary.add_user(user.id, user.first_name, user.username)
+        uow.commit()
+
     keyboard = [
         [InlineKeyboardButton("🧠 Мой словарь", callback_data=f"{CB_DICT_VIEW}:0")],
         [InlineKeyboardButton("💪 Тренировка", callback_data=CB_TRAIN_MENU)]
@@ -55,11 +54,8 @@ async def display_word_card(
     word_id = word_data['word_id']
     
     if in_dictionary is None:
-        in_dictionary = db_read_query(
-            "SELECT 1 FROM user_dictionary WHERE user_id = ? AND word_id = ?",
-            (user_id, word_id),
-            fetchone=True
-        )
+        with UnitOfWork() as uow:
+            in_dictionary = uow.user_dictionary.is_word_in_dictionary(user_id, word_id)
     
     translations = word_data.get('translations', [])
     primary_translation = next((t['translation_text'] for t in translations if t['is_primary']), "Перевод не найден")

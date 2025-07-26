@@ -7,20 +7,11 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from datetime import datetime
-import re
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-from telegram.constants import ParseMode
-
 from config import logger, CB_ADD, CB_SHOW_VERB, CB_VIEW_CARD
 from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card
-from dal.repositories import WordRepository, UserDictionaryRepository
-
-word_repo = WordRepository()
-user_dict_repo = UserDictionaryRepository()
+from dal.unit_of_work import UnitOfWork
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -41,19 +32,18 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     normalized_text = normalize_hebrew(text)
     
-    word_data = word_repo.find_word_by_normalized_form(normalized_text)
-    if word_data:
-        # Pydantic модели нужно преобразовать в dict для display_word_card
-        word_dict = word_data.model_dump()
-        await display_word_card(context, user_id, chat_id, word_dict)
-        return
+    with UnitOfWork() as uow:
+        word_data = uow.words.find_word_by_normalized_form(normalized_text)
+        if word_data:
+            word_dict = word_data.model_dump()
+            await display_word_card(context, user_id, chat_id, word_dict)
+            return
 
     status_message = await update.message.reply_text("🔎 Ищу слово во внешнем словаре...")
     
     status, data = await fetch_and_cache_word_data(text)
 
     if status == 'ok' and data:
-        # data от fetch_and_cache_word_data уже dict
         await display_word_card(context, user_id, chat_id, data, message_id=status_message.message_id)
     elif status == 'not_found':
         await context.bot.edit_message_text(f"Слово '{text}' не найдено.", chat_id=chat_id, message_id=status_message.message_id)
@@ -71,12 +61,13 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
     word_id = int(query.data.split(':')[2])
     user_id = query.from_user.id
     
-    user_dict_repo.add_word_to_dictionary(user_id, word_id)
+    with UnitOfWork() as uow:
+        uow.user_dictionary.add_word_to_dictionary(user_id, word_id)
+        uow.commit()
+        word_data = uow.words.get_word_by_id(word_id)
     
-    word_data = word_repo.get_word_by_id(word_id)
     if word_data:
         word_dict = word_data.model_dump()
-        # Передаем in_dictionary=True, чтобы функция знала, что слово уже добавлено
         await display_word_card(
             context,
             user_id,
@@ -93,8 +84,9 @@ async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     
     word_id = int(query.data.split(':')[-1])
-    word_hebrew = word_repo.get_word_hebrew_by_id(word_id)
-    conjugations = word_repo.get_conjugations_for_word(word_id)
+    with UnitOfWork() as uow:
+        word_hebrew = uow.words.get_word_hebrew_by_id(word_id)
+        conjugations = uow.words.get_conjugations_for_word(word_id)
     
     keyboard = [[InlineKeyboardButton("⬅️ Назад к слову", callback_data=f"{CB_VIEW_CARD}:{word_id}")]]
 
@@ -131,7 +123,9 @@ async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_T
     chat_id = query.message.chat_id
     message_id = query.message.message_id
     
-    word_data = word_repo.get_word_by_id(word_id)
+    with UnitOfWork() as uow:
+        word_data = uow.words.get_word_by_id(word_id)
+
     if word_data:
         word_dict = word_data.model_dump()
         await display_word_card(context, user_id, chat_id, word_dict, message_id=message_id)

@@ -13,15 +13,12 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from config import logger, PARSING_TIMEOUT
-from dal.repositories import WordRepository
+from dal.unit_of_work import UnitOfWork
 from utils import normalize_hebrew, parse_translations
-from services.database import DB_READ_ATTEMPTS, DB_READ_DELAY
 
 # --- УПРАВЛЕНИЕ КОНКУРЕНТНЫМ ПАРСИНГОМ ---
 PARSING_EVENTS: Dict[str, asyncio.Event] = {}
 PARSING_EVENTS_LOCK = asyncio.Lock()
-
-word_repo = WordRepository()
 
 
 def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
@@ -151,7 +148,8 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
         try:
             await asyncio.wait_for(event.wait(), timeout=PARSING_TIMEOUT)
             logger.info(f"Ожидание для '{search_word}' завершено, повторный поиск в кэше.")
-            result = word_repo.find_word_by_normalized_form(normalized_search_word)
+            with UnitOfWork() as uow:
+                result = uow.words.find_word_by_normalized_form(normalized_search_word)
             return ('ok', result.dict() if result else None)
         except asyncio.TimeoutError:
             logger.warning(f"Таймаут ожидания для '{search_word}'.")
@@ -217,33 +215,32 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
             for conj in parsed_data['conjugations']:
                 conj['normalized_hebrew_form'] = normalize_hebrew(conj['hebrew_form'])
         
-        if word_repo.find_word_by_normalized_form(parsed_data['normalized_hebrew']):
-            logger.info(f"Шаг 3.2: Нормализованная форма '{parsed_data['normalized_hebrew']}' уже есть в кэше. Сохранение не требуется.")
-            result = word_repo.find_word_by_normalized_form(parsed_data['normalized_hebrew'])
-            return 'ok', result.dict() if result else None
+        with UnitOfWork() as uow:
+            if uow.words.find_word_by_normalized_form(parsed_data['normalized_hebrew']):
+                logger.info(f"Шаг 3.2: Нормализованная форма '{parsed_data['normalized_hebrew']}' уже есть в кэше. Сохранение не требуется.")
+                result = uow.words.find_word_by_normalized_form(parsed_data['normalized_hebrew'])
+                return 'ok', result.dict() if result else None
 
-        logger.info(f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его форм в БД...")
-        word_repo.create_cached_word(
-            hebrew=parsed_data['hebrew'],
-            normalized_hebrew=parsed_data['normalized_hebrew'],
-            transcription=parsed_data.get('transcription'),
-            is_verb=parsed_data['is_verb'],
-            root=parsed_data.get('root'),
-            binyan=parsed_data.get('binyan'),
-            translations=parsed_data.get('translations', []),
-            conjugations=parsed_data.get('conjugations', [])
-        )
+            logger.info(f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его форм в БД...")
+            uow.words.create_cached_word(
+                hebrew=parsed_data['hebrew'],
+                normalized_hebrew=parsed_data['normalized_hebrew'],
+                transcription=parsed_data.get('transcription'),
+                is_verb=parsed_data['is_verb'],
+                root=parsed_data.get('root'),
+                binyan=parsed_data.get('binyan'),
+                translations=parsed_data.get('translations', []),
+                conjugations=parsed_data.get('conjugations', [])
+            )
+            uow.commit()
 
         logger.info("Шаг 5: Ожидание появления слова в БД и возврат результата...")
         final_word_data = None
-        # Пытаемся несколько раз найти слово в БД, ожидая его сохранения
-        for _ in range(DB_READ_ATTEMPTS):
-            await asyncio.sleep(DB_READ_DELAY) # Асинхронное ожидание
-            result = word_repo.find_word_by_normalized_form(parsed_data['normalized_hebrew'])
+        with UnitOfWork() as uow:
+            result = uow.words.find_word_by_normalized_form(parsed_data['normalized_hebrew'])
             if result:
                 final_word_data = result
                 logger.info("Шаг 5.x: Слово успешно найдено в БД.")
-                break
 
         if final_word_data:
             logger.info(f"--- Парсинг для '{search_word}' завершен УСПЕШНО. ---")

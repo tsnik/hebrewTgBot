@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import sys
-import threading
 import asyncio
 
 from telegram.ext import (
@@ -22,9 +21,6 @@ from config import (
     CB_TRAIN_MENU, CB_TRAIN_HE_RU, CB_TRAIN_RU_HE, CB_VERB_TRAINER_START,
     CB_SHOW_ANSWER, CB_EVAL_CORRECT, CB_EVAL_INCORRECT, CB_END_TRAINING
 )
-
-# Импортируем сервисы
-from services.database import init_db, db_worker, DB_WRITE_QUEUE
 
 # Импортируем обработчики
 from handlers.common import start, main_menu, back_to_main_menu
@@ -48,17 +44,8 @@ def main() -> None:
         logger.critical("Токен бота не найден. Укажите TELEGRAM_BOT_TOKEN в .env файле.")
         sys.exit("Токен не найден.")
 
-    # 1. Запускаем воркер для записи в БД в отдельном потоке
-    db_worker_thread = threading.Thread(target=db_worker, daemon=True)
-    db_worker_thread.start()
-    
-    # 2. Инициализируем таблицы в БД
-    # init_db() - теперь этим занимается yoyo
-    
-    # 3. Собираем приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # 4. Настраиваем ConversationHandler для тренировок
     conv_defaults = {
         "per_user": True,
         "per_chat": True,
@@ -100,33 +87,23 @@ def main() -> None:
         **conv_defaults
     )
 
-    # 5. Добавляем все обработчики в приложение
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(main_menu, pattern="^main_menu$"))
     
-    # Обработчики словаря
     application.add_handler(CallbackQueryHandler(view_dictionary_page_handler, pattern=f"^({CB_DICT_VIEW}|{CB_DICT_DELETE_MODE}):"))
     application.add_handler(CallbackQueryHandler(confirm_delete_word, pattern=f"^{CB_DICT_CONFIRM_DELETE}:"))
     application.add_handler(CallbackQueryHandler(execute_delete_word, pattern=f"^{CB_DICT_EXECUTE_DELETE}:"))
     
-    # Обработчики карточки слова
     application.add_handler(CallbackQueryHandler(add_word_to_dictionary, pattern=f"^{CB_ADD}:"))
     application.add_handler(CallbackQueryHandler(show_verb_conjugations, pattern=f"^{CB_SHOW_VERB}:"))
     application.add_handler(CallbackQueryHandler(view_word_card_handler, pattern=f"^{CB_VIEW_CARD}:"))
     
-    # Добавляем ConversationHandler для тренировок
     application.add_handler(training_conv)
     
-    # Обработчик текстовых сообщений (должен идти одним из последних)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 
-    # 6. Запускаем бота
     logger.info("Бот запускается...")
     application.run_polling()
-    
-    # Корректное завершение работы
-    DB_WRITE_QUEUE.put(None)
-    db_worker_thread.join()
 
 
 if __name__ == "__main__":

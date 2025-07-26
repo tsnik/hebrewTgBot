@@ -9,10 +9,7 @@ from config import (
     CB_DICT_VIEW, CB_DICT_DELETE_MODE, CB_DICT_CONFIRM_DELETE,
     CB_DICT_EXECUTE_DELETE, logger, DICT_WORDS_PER_PAGE
 )
-from dal.repositories import WordRepository, UserDictionaryRepository
-
-word_repo = WordRepository()
-user_dict_repo = UserDictionaryRepository()
+from dal.unit_of_work import UnitOfWork
 
 
 async def view_dictionary_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -45,7 +42,8 @@ async def view_dictionary_page_logic(
     query = update.callback_query
     user_id = query.from_user.id
     
-    words_from_db = user_dict_repo.get_dictionary_page(user_id, page, DICT_WORDS_PER_PAGE)
+    with UnitOfWork() as uow:
+        words_from_db = uow.user_dictionary.get_dictionary_page(user_id, page, DICT_WORDS_PER_PAGE)
     
     # Если мы только что удалили слово, убираем его из списка
     words = [w for w in words_from_db if w['word_id'] != exclude_word_id] if exclude_word_id else words_from_db
@@ -106,7 +104,8 @@ async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     
     _, _, word_id_str, page_str = query.data.split(':')
-    word_hebrew = word_repo.get_word_hebrew_by_id(int(word_id_str))
+    with UnitOfWork() as uow:
+        word_hebrew = uow.words.get_word_hebrew_by_id(int(word_id_str))
     
     if not word_hebrew:
         await query.edit_message_text("Ошибка: слово не найдено.")
@@ -128,7 +127,9 @@ async def execute_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     _, _, word_id_str, page_str = query.data.split(':')
     word_id, page = int(word_id_str), int(page_str)
     
-    user_dict_repo.remove_word_from_dictionary(query.from_user.id, word_id)
+    with UnitOfWork() as uow:
+        uow.user_dictionary.remove_word_from_dictionary(query.from_user.id, word_id)
+        uow.commit()
     
     # Перерисовываем страницу словаря, исключая удаленное слово
     await view_dictionary_page_logic(update, context, page=page, deletion_mode=False, exclude_word_id=word_id)

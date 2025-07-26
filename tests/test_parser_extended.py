@@ -1,7 +1,7 @@
 import pytest
 from bs4 import BeautifulSoup
 from unittest.mock import patch, MagicMock
-from app.services.parser import parse_verb_page, parse_noun_or_adjective_page, parse_translations
+from services.parser import parse_verb_page, parse_noun_or_adjective_page, parse_translations
 
 # Mock HTML for PI'EL verb
 piel_verb_html = """
