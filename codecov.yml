@@ -1,9 +1,0 @@
-#fixes:
-  #- "^((?!app/).+\\.py)$::app/\\1"
-  #- "::app/"
-  
-fixes:
-  - "/home/runner/work/hebrewTgBot/hebrewTgBot/::"
-
-codecov:
-  disable_default_path_fixes: true
