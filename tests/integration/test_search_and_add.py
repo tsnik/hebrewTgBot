@@ -27,7 +27,7 @@ MOCK_PEALIM_HTML = """
 
 @pytest.mark.asyncio
 @patch("services.parser.httpx.AsyncClient")  # Патчим HTTP-клиент в модуле парсера
-async def test_full_search_and_add_scenario(mock_async_client, memory_db, mock_context):
+async def test_full_search_and_add_scenario(mock_async_client, mock_context):
     """
     Полный интеграционный тест сценария:
     1. Пользователь ищет слово, которого нет в кэше.
@@ -73,6 +73,7 @@ async def test_full_search_and_add_scenario(mock_async_client, memory_db, mock_c
 
         # Получаем аргументы вызова display_word_card для детальной проверки
         _call_args, call_kwargs = mock_display_word_card.call_args
+        print (call_kwargs)
         word_data = call_kwargs['word_data']
 
         # Проверяем наличие кнопки "Добавить"

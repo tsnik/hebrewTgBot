@@ -56,8 +56,7 @@ class UnitOfWork(AbstractUnitOfWork):
             self.rollback()
         elif self.connection:
             self.commit()
-        if self.connection:
-            self.connection.close()
+        self.connection_manager.__exit__(exc_type, exc_value, traceback)
 
     def commit(self):
         if self.connection:

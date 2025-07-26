@@ -44,7 +44,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     status, data = await fetch_and_cache_word_data(text)
 
     if status == 'ok' and data:
-        await display_word_card(context, user_id, chat_id, data, message_id=status_message.message_id)
+        await display_word_card(context, user_id, chat_id, word_data=data, message_id=status_message.message_id)
     elif status == 'not_found':
         await context.bot.edit_message_text(f"Слово '{text}' не найдено.", chat_id=chat_id, message_id=status_message.message_id)
     elif status == 'error':
@@ -128,6 +128,6 @@ async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     if word_data:
         word_dict = word_data.model_dump()
-        await display_word_card(context, user_id, chat_id, word_dict, message_id=message_id)
+        await display_word_card(context, user_id, chat_id, word_data=word_dict, message_id=message_id)
     else:
         await query.edit_message_text("Ошибка: слово не найдено.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]]))
