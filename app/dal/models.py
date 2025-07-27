@@ -28,12 +28,19 @@ class CachedWord(BaseModel):
     hebrew: str
     normalized_hebrew: str
     transcription: Optional[str] = None
-    is_verb: bool
+    part_of_speech: Optional[str] = None
     root: Optional[str] = None
     binyan: Optional[str] = None
     fetched_at: datetime
     translations: List[Translation] = []
     conjugations: List[VerbConjugation] = []
+    gender: Optional[str] = None
+    singular_form: Optional[str] = None
+    plural_form: Optional[str] = None
+    masculine_singular: Optional[str] = None
+    feminine_singular: Optional[str] = None
+    masculine_plural: Optional[str] = None
+    feminine_plural: Optional[str] = None
 
 
 class UserDictionaryEntry(BaseModel):

@@ -2,6 +2,7 @@
 
 import re
 import asyncio
+import unicodedata
 from typing import Tuple, Optional, Dict, Any
 from urllib.parse import quote, urljoin
 
@@ -17,16 +18,119 @@ PARSING_EVENTS: Dict[str, asyncio.Event] = {}
 PARSING_EVENTS_LOCK = asyncio.Lock()
 
 
+def _extract_form_value(cell: Tag) -> str:
+    """Извлекает иврит и транскрипцию из ячейки таблицы."""
+    menukad = cell.find(class_="menukad")
+    transcription = cell.find(class_="transcription")
+
+    hebrew_part = menukad.text.strip() if menukad else ""
+    trans_part = transcription.text.strip() if transcription else ""
+
+    if hebrew_part and trans_part:
+        return f"{hebrew_part} ({trans_part})"
+    return hebrew_part or trans_part
+
+
+def _extract_hebrew_from_cell(cell: Tag) -> Optional[str]:
+    """Извлекает только ивритскую форму из ячейки таблицы, без транскрипции."""
+    if not cell:
+        return None
+    menukad = cell.find(class_="menukad")
+    if not menukad:
+        return None
+    # Убираем альтернативные написания типа "~ ..."
+    hebrew_text = menukad.text.split("~")[0].strip()
+    # Нормализуем строку в NFD для консистентного сравнения
+    return unicodedata.normalize("NFD", hebrew_text)
+
+
+def _get_part_of_speech_from_meta(soup: BeautifulSoup) -> Optional[str]:
+    """
+    Извлекает часть речи из мета-тега description.
+    Это наиболее надежный метод.
+    """
+    meta_tag = soup.find("meta", attrs={"name": "description"})
+    if not meta_tag or not meta_tag.get("content"):
+        logger.warning("Мета-тег 'description' не найден или пуст.")
+        return None
+
+    content = meta_tag.get("content", "").lower()
+    if content.startswith("verb"):
+        return "verb"
+    if content.startswith("существительное"):
+        return "noun"
+    if content.startswith("прилагательное"):
+        return "adjective"
+
+    logger.warning(f"Не удалось определить часть речи из мета-тега: {content[:50]}...")
+    return None
+
+
+def _parse_noun_forms(soup: BeautifulSoup) -> Dict[str, Any]:
+    """
+    Извлекает формы для существительного из таблицы.
+    Сохраняет род в стандартизированном английском формате.
+    """
+    forms = {}
+    main_header = soup.find("h2", class_="page-header")
+    if main_header:
+        p_tag = main_header.find_next_sibling("p")
+        if p_tag:
+            text = p_tag.text.lower()
+            if "мужской род" in text or "masculine" in text:
+                forms["gender"] = "masculine"
+            elif "женский род" in text or "feminine" in text:
+                forms["gender"] = "feminine"
+
+    table = soup.find("table", class_="conjugation-table")
+    if not table:
+        return forms
+
+    absolute_state_header = table.find("th", string="Абсолютное состояние")
+    if absolute_state_header:
+        row = absolute_state_header.parent
+        cells = row.find_all("td")
+        if len(cells) >= 2:
+            forms["singular_form"] = _extract_hebrew_from_cell(cells[0])
+            forms["plural_form"] = _extract_hebrew_from_cell(cells[1])
+
+    return forms
+
+
+def _parse_adjective_forms(soup: BeautifulSoup) -> Dict[str, Any]:
+    """
+    Извлекает формы для прилагательного из таблицы.
+    Теперь использует _extract_hebrew_from_cell для чистоты данных.
+    """
+    forms = {}
+    table = soup.find("table", class_="conjugation-table")
+    if not table:
+        return forms
+
+    data_row = table.find("tbody").find("tr")
+    if not data_row:
+        return forms
+
+    cells = data_row.find_all("td")
+    if len(cells) == 4:
+        forms["masculine_singular"] = _extract_hebrew_from_cell(cells[0])
+        forms["feminine_singular"] = _extract_hebrew_from_cell(cells[1])
+        forms["masculine_plural"] = _extract_hebrew_from_cell(cells[2])
+        forms["feminine_plural"] = _extract_hebrew_from_cell(cells[3])
+    return forms
+
+
 def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
     """Парсер для страниц глаголов."""
     logger.info("-> Запущен parse_verb_page.")
     try:
-        data = {"is_verb": True}
+        data = {"part_of_speech": "verb", "is_verb": True}
 
         logger.info("--> parse_verb_page: Поиск инфинитива...")
         infinitive_div = soup.find("div", id="INF-L")
+
         if not infinitive_div:
-            logger.error("--> parse_verb_page: Не найден блок инфинитива INF-L.")
+            logger.error("--> parse_verb_page: Не найден блок инфинитива.")
             return None
 
         menukad_tag = infinitive_div.find("span", class_="menukad")
@@ -35,7 +139,9 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
                 "--> parse_verb_page: Не найден тег menukad внутри блока инфинитива."
             )
             return None
-        data["hebrew"] = menukad_tag.text.split("~")[0].strip()
+
+        hebrew_text = menukad_tag.text.split("~")[0].strip()
+        data["hebrew"] = unicodedata.normalize("NFD", hebrew_text)
         logger.info(f"--> parse_verb_page: Инфинитив найден: {data['hebrew']}")
 
         logger.info("--> parse_verb_page: Поиск перевода...")
@@ -62,11 +168,14 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
         logger.info("--> parse_verb_page: Поиск корня и биньяна...")
         data["root"], data["binyan"] = None, None
         for p in main_header.parent.find_all("p"):
-            if "биньян" in p.text.lower():
-                binyan_tag = p.find("b")
-                if binyan_tag and binyan_tag.next_sibling:
-                    data["binyan"] = binyan_tag.next_sibling.strip()
-            if "корень" in p.text.lower():
+            text_lower = p.text.lower()
+            if "глагол" in text_lower:
+                binyan_text = (
+                    p.text.replace("Verb –", "").replace("Глагол –", "").strip()
+                )
+                data["binyan"] = binyan_text.split()[0] if binyan_text else None
+
+            if "root" in text_lower or "корень" in text_lower:
                 root_tag = p.find("span", class_="menukad")
                 if root_tag:
                     data["root"] = root_tag.text.strip()
@@ -113,55 +222,81 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
 def parse_noun_or_adjective_page(
     soup: BeautifulSoup, main_header: Tag
 ) -> Optional[Dict[str, Any]]:
-    """Парсер для страниц существительных и прилагательных."""
-    logger.info("-> Запущен parse_noun_or_adjective_page.")
-    try:
-        data = {"is_verb": False, "root": None, "binyan": None, "conjugations": []}
+    """
+    Парсер для страниц существительных и прилагательных.
+    Ищет каноническую форму непосредственно в таблице склонения.
+    """
+    part_of_speech = _get_part_of_speech_from_meta(soup)
+    if not part_of_speech or part_of_speech == "verb":
+        logger.error(f"Неверный тип страницы для этого парсера: {part_of_speech}")
+        return None
 
-        logger.info("--> parse_noun_or_adjective_page: Поиск канонической формы...")
+    logger.info(f"-> Запущен parse_noun_or_adjective_page для '{part_of_speech}'.")
+    try:
+        data = {
+            "root": None,
+            "binyan": None,
+            "conjugations": [],
+            "part_of_speech": part_of_speech,
+            "is_verb": False,
+        }
+
+        logger.info(f"--> Часть речи установлена как {data['part_of_speech']}.")
+
+        logger.info("--> Поиск канонической формы из таблицы...")
         canonical_hebrew = None
-        canonical_tag = main_header.find("span", class_="menukad")
-        if canonical_tag:
-            canonical_hebrew = canonical_tag.text.strip()
-        elif soup.title and "–" in soup.title.string:
-            logger.info(
-                "--> parse_noun_or_adjective_page: не найден menukad, используется запасной метод (title)."
-            )
-            potential_word = soup.title.string.split("–")[0].strip()
-            if re.match(r"^[\u0590-\u05FF\s-]+$", potential_word):
-                canonical_hebrew = potential_word
+        table = soup.find("table", class_="conjugation-table")
+
+        if table:
+            if part_of_speech == "noun":
+                # Ищем "Абсолютное состояние", затем первую ячейку данных (ед.ч.)
+                header_cell = table.find("th", string="Абсолютное состояние")
+                if header_cell:
+                    data_cell = header_cell.parent.find("td")
+                    if data_cell:
+                        canonical_hebrew = _extract_hebrew_from_cell(data_cell)
+            elif part_of_speech == "adjective":
+                # Просто берем первую ячейку данных (м.р., ед.ч.)
+                data_cell = table.find("td")
+                if data_cell:
+                    canonical_hebrew = _extract_hebrew_from_cell(data_cell)
 
         if not canonical_hebrew:
             logger.error(
-                "--> parse_noun_or_adjective_page: Не удалось найти каноническую форму."
+                "--> Не удалось найти каноническую форму в таблице. Парсинг прерван."
             )
             return None
-        data["hebrew"] = canonical_hebrew
-        logger.info(
-            f"--> parse_noun_or_adjective_page: Каноническая форма найдена: {data['hebrew']}"
-        )
 
-        logger.info("--> parse_noun_or_adjective_page: Поиск перевода...")
+        data["hebrew"] = canonical_hebrew
+        logger.info(f"--> Каноническая форма из таблицы найдена: {data['hebrew']}")
+
+        logger.info("--> Поиск перевода...")
         lead_div = soup.find("div", class_="lead")
         if not lead_div:
             logger.error(
-                f"--> parse_noun_or_adjective_page для '{data['hebrew']}': не найден 'div' с классом 'lead' (перевод)."
+                f"--> для '{data['hebrew']}': не найден 'div' с классом 'lead' (перевод)."
             )
             return None
 
         data["translations"] = parse_translations(lead_div.text.strip())
         if not data["translations"]:
             logger.warning(
-                f"--> parse_noun_or_adjective_page для '{data['hebrew']}': функция parse_translations вернула пустой список."
+                f"--> для '{data['hebrew']}': функция parse_translations вернула пустой список."
             )
             return None
-        logger.info("--> parse_noun_or_adjective_page: Переводы найдены.")
+        logger.info("--> Переводы найдены.")
 
-        logger.info("--> parse_noun_or_adjective_page: Поиск транскрипции...")
-        transcription_div = soup.find("div", class_="transcription")
-        data["transcription"] = (
-            transcription_div.text.strip() if transcription_div else ""
-        )
+        logger.info("--> Поиск транскрипции...")
+        first_form = soup.find("div", class_="transcription")
+        data["transcription"] = first_form.text.strip() if first_form else ""
+
+        # Извлечение всех форм в зависимости от части речи
+        if data["part_of_speech"] == "noun":
+            forms = _parse_noun_forms(soup)
+            data.update(forms)
+        elif data["part_of_speech"] == "adjective":
+            forms = _parse_adjective_forms(soup)
+            data.update(forms)
 
         logger.info("-> parse_noun_or_adjective_page завершен успешно.")
         return data
@@ -216,39 +351,34 @@ async def fetch_and_cache_word_data(
         ) as client:
             logger.info("Шаг 1: Выполнение HTTP-запроса...")
             try:
-                search_url = f"https://www.pealim.com/ru/search/?q={quote(search_word)}"
-                search_response = await client.get(search_url, timeout=10)
-                search_response.raise_for_status()
-                logger.info(f"Шаг 1.1: Успешно получен ответ от {search_url}")
+                # Сначала ищем в русской версии, если нет - в английской
+                search_url_ru = (
+                    f"https://www.pealim.com/ru/search/?q={quote(search_word)}"
+                )
+                response = await client.get(search_url_ru, timeout=10)
+                response.raise_for_status()
 
-                if "/dict/" in str(search_response.url):
-                    response = search_response
-                    logger.info("Шаг 1.2: Прямое перенаправление на словарную статью.")
-                else:
-                    logger.info(
-                        "Шаг 1.2: Ответ - страница поиска, ищем нужную ссылку..."
-                    )
-                    search_soup = BeautifulSoup(search_response.text, "html.parser")
+                # Если после поиска мы не на странице словаря, ищем ссылку
+                if "/dict/" not in str(response.url):
+                    search_soup = BeautifulSoup(response.text, "html.parser")
                     results_container = search_soup.find(
                         "div", class_="results-by-verb"
                     ) or search_soup.find("div", class_="results-by-meaning")
-                    if not results_container:
-                        logger.warning(
-                            f"Не найдено результатов на странице поиска для '{search_word}'."
+                    if results_container:
+                        result_link = results_container.find(
+                            "a", href=re.compile(r"/dict/")
                         )
-                        return "not_found", None
-                    result_link = results_container.find(
-                        "a", href=re.compile(r"/dict/")
+                        if result_link and result_link.get("href"):
+                            final_url = urljoin(str(response.url), result_link["href"])
+                            response = await client.get(final_url, timeout=10)
+                            response.raise_for_status()
+
+                if "/dict/" not in str(response.url):
+                    logger.warning(
+                        f"Не найдено результатов ни в русской, ни в английской версии для '{search_word}'."
                     )
-                    if not result_link or not result_link.get("href"):
-                        logger.warning(
-                            f"Не найдено ссылки на словарную статью для '{search_word}'."
-                        )
-                        return "not_found", None
-                    final_url = urljoin(str(search_response.url), result_link["href"])
-                    logger.info(f"Шаг 1.3: Найдена ссылка, переход на {final_url}")
-                    response = await client.get(final_url, timeout=10)
-                    response.raise_for_status()
+                    return "not_found", None
+
             except httpx.RequestError as e:
                 logger.error(
                     f"Сетевая ошибка при запросе к pealim.com: {e}", exc_info=True
@@ -265,14 +395,27 @@ async def fetch_and_cache_word_data(
             return "error", None
 
         parsed_data = None
-        if "спряжение" in main_header.text.lower():
+        # Используем мета-тег как основной источник, но оставляем проверку заголовка как запасной вариант
+        part_of_speech = _get_part_of_speech_from_meta(soup)
+
+        if (
+            part_of_speech == "verb"
+            or "спряжение" in main_header.text.lower()
+            or "conjugation" in main_header.text.lower()
+        ):
             logger.info("Шаг 2.1: Страница определена как ГЛАГОЛ.")
             parsed_data = parse_verb_page(soup, main_header)
-        else:
+        elif (
+            part_of_speech in ["noun", "adjective"]
+            or "формы слова" in main_header.text.lower()
+        ):
             logger.info(
                 "Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ."
             )
             parsed_data = parse_noun_or_adjective_page(soup, main_header)
+        else:
+            logger.error(f"Не удалось определить тип страницы для: {main_header.text}")
+            return "error", None
 
         logger.info("Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга...")
         if not parsed_data:
@@ -295,21 +438,32 @@ async def fetch_and_cache_word_data(
                 result = uow.words.find_word_by_normalized_form(
                     parsed_data["normalized_hebrew"]
                 )
-                return "ok", result.dict() if result else None
+                return "ok", result.model_dump() if result else None
 
             logger.info(
                 f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его форм в БД..."
             )
-            uow.words.create_cached_word(
-                hebrew=parsed_data["hebrew"],
-                normalized_hebrew=parsed_data["normalized_hebrew"],
-                transcription=parsed_data.get("transcription"),
-                is_verb=parsed_data["is_verb"],
-                root=parsed_data.get("root"),
-                binyan=parsed_data.get("binyan"),
-                translations=parsed_data.get("translations", []),
-                conjugations=parsed_data.get("conjugations", []),
-            )
+
+            word_to_create = {
+                "hebrew": parsed_data["hebrew"],
+                "normalized_hebrew": parsed_data["normalized_hebrew"],
+                "transcription": parsed_data.get("transcription"),
+                "is_verb": parsed_data.get("is_verb", False),
+                "part_of_speech": parsed_data.get("part_of_speech"),
+                "root": parsed_data.get("root"),
+                "binyan": parsed_data.get("binyan"),
+                "translations": parsed_data.get("translations", []),
+                "conjugations": parsed_data.get("conjugations", []),
+                "gender": parsed_data.get("gender"),
+                "singular_form": parsed_data.get("singular_form"),
+                "plural_form": parsed_data.get("plural_form"),
+                "masculine_singular": parsed_data.get("masculine_singular"),
+                "feminine_singular": parsed_data.get("feminine_singular"),
+                "masculine_plural": parsed_data.get("masculine_plural"),
+                "feminine_plural": parsed_data.get("feminine_plural"),
+            }
+
+            uow.words.create_cached_word(**word_to_create)
             uow.commit()
 
         logger.info("Шаг 5: Ожидание появления слова в БД и возврат результата...")

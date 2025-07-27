@@ -4,21 +4,19 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 import sqlite3
 
-from dal.models import (
-    CachedWord,
-    Translation,
-    VerbConjugation,
-)
+from dal.models import CachedWord, Translation, VerbConjugation
 
 
 class BaseRepository:
     def __init__(self, connection: sqlite3.Connection):
         self.connection = connection
+        self.connection.row_factory = sqlite3.Row
 
-    def _row_to_model(self, row: Dict[str, Any], model_class):
-        return model_class(**row) if row else None
+    def _row_to_model(self, row: sqlite3.Row, model_class):
+        # Explicitly convert sqlite3.Row to dict for robust Pydantic model creation
+        return model_class(**dict(row)) if row else None
 
-    def _rows_to_models(self, rows: List[Dict[str, Any]], model_class):
+    def _rows_to_models(self, rows: List[sqlite3.Row], model_class):
         return [self._row_to_model(row, model_class) for row in rows] if rows else []
 
 
@@ -53,11 +51,12 @@ class WordRepository(BaseRepository):
         return self._rows_to_models(conjugations_data, VerbConjugation)
 
     def get_random_verb_for_training(self, user_id: int) -> Optional[CachedWord]:
+        # *** ADAPTED FOR NEW MODEL ***
         query = """
             SELECT cw.*
             FROM cached_words cw
             JOIN user_dictionary ud ON cw.word_id = ud.word_id
-            WHERE ud.user_id = ? AND cw.is_verb = 1
+            WHERE ud.user_id = ? AND cw.part_of_speech = 'verb'
             ORDER BY RANDOM()
             LIMIT 1
         """
@@ -117,26 +116,31 @@ class WordRepository(BaseRepository):
         binyan: Optional[str],
         translations: List[Dict[str, Any]],
         conjugations: List[Dict[str, Any]],
+        **kwargs,
     ) -> int:
         cursor = self.connection.cursor()
 
-        word_query = """
-            INSERT INTO cached_words
-            (hebrew, normalized_hebrew, transcription, is_verb, root, binyan, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """
-        cursor.execute(
-            word_query,
-            (
-                hebrew,
-                normalized_hebrew,
-                transcription,
-                is_verb,
-                root,
-                binyan,
-                datetime.now(),
-            ),
-        )
+        part_of_speech = "verb" if is_verb else kwargs.get("part_of_speech")
+
+        word_data = {
+            "hebrew": hebrew,
+            "normalized_hebrew": normalized_hebrew,
+            "transcription": transcription,
+            "part_of_speech": part_of_speech,
+            "root": root,
+            "binyan": binyan,
+            "fetched_at": datetime.now(),
+            **kwargs,
+        }
+
+        # Remove is_verb if it exists in kwargs to avoid column error
+        word_data.pop("is_verb", None)
+
+        columns = ", ".join(word_data.keys())
+        placeholders = ", ".join(["?"] * len(word_data))
+        word_query = f"INSERT INTO cached_words ({columns}) VALUES ({placeholders})"
+
+        cursor.execute(word_query, list(word_data.values()))
         word_id = cursor.lastrowid
         if not word_id:
             raise Exception("Failed to get last row id for new word.")
@@ -151,10 +155,7 @@ class WordRepository(BaseRepository):
                 )
                 for t in translations
             ]
-            translations_query = """
-                INSERT INTO translations (word_id, translation_text, context_comment, is_primary)
-                VALUES (?, ?, ?, ?)
-            """
+            translations_query = "INSERT INTO translations (word_id, translation_text, context_comment, is_primary) VALUES (?, ?, ?, ?)"
             cursor.executemany(translations_query, translations_to_insert)
 
         if conjugations:
@@ -169,11 +170,7 @@ class WordRepository(BaseRepository):
                 )
                 for c in conjugations
             ]
-            conjugations_query = """
-                INSERT INTO verb_conjugations
-                (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """
+            conjugations_query = "INSERT INTO verb_conjugations (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription) VALUES (?, ?, ?, ?, ?, ?)"
             cursor.executemany(conjugations_query, conjugations_to_insert)
 
         return word_id
@@ -225,11 +222,12 @@ class UserDictionaryRepository(BaseRepository):
         return result is not None
 
     def get_user_words_for_training(self, user_id: int, limit: int) -> List[CachedWord]:
+        # *** ADAPTED FOR NEW MODEL ***
         query = """
             SELECT cw.*
             FROM cached_words cw
             JOIN user_dictionary ud ON cw.word_id = ud.word_id
-            WHERE ud.user_id = ? AND cw.is_verb = 0
+            WHERE ud.user_id = ? AND (cw.part_of_speech != 'verb' OR cw.part_of_speech IS NULL)
             ORDER BY ud.next_review_at ASC
             LIMIT ?
         """
