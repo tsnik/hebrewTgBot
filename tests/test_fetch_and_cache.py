@@ -164,7 +164,6 @@ import asyncio
 
 @pytest.mark.asyncio
 @respx.mock
-@pytest.mark.skip(reason="Concurrent parsing test is failing")
 async def test_fetch_and_cache_word_data_concurrent_parsing(monkeypatch):
     search_word = "לִכְתּוֹב"
 
