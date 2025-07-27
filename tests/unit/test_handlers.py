@@ -25,6 +25,9 @@ from handlers.training import (
     end_training,
     check_verb_answer,
 )
+
+# ИСПРАВЛЕНИЕ: Добавлен импорт display_word_card для прямого тестирования
+from handlers.common import display_word_card
 from config import CB_EVAL_CORRECT, CB_EVAL_INCORRECT, VERB_TRAINER_RETRY_ATTEMPTS
 
 
@@ -65,6 +68,108 @@ async def test_main_menu():
     update.callback_query.answer.assert_called_once()
     update.callback_query.edit_message_text.assert_called_once()
     assert "Главное меню" in update.callback_query.edit_message_text.call_args.args[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "word_data, in_dictionary, message_id, expected_text_parts, expected_buttons",
+    [
+        # --- Сценарий 1: Новое слово (не в словаре), отправка нового сообщения ---
+        (
+            {
+                "word_id": 1,
+                "hebrew": "חדש",
+                "transcription": "chadash",
+                "part_of_speech": "adjective",
+                "translations": [{"translation_text": "new", "is_primary": True}],
+                "masculine_singular": "חדש",
+                "feminine_singular": "חדשה",
+            },
+            False,
+            None,
+            ["Найдено: *חדש*", "ж.р., ед.ч.: חדשה"],
+            ["➕ Добавить", "⬅️ В главное меню"],
+        ),
+        # --- Сценарий 2: Слово уже в словаре, редактирование существующего сообщения ---
+        (
+            {
+                "word_id": 2,
+                "hebrew": "ישן",
+                "transcription": "yashan",
+                "part_of_speech": "noun",
+                "translations": [{"translation_text": "old", "is_primary": True}],
+                "gender": "masculine",
+                "plural_form": "ישנים",
+            },
+            True,
+            12345,
+            ["Слово *ישן* уже в вашем словаре", "Род: Мужской род", "Мн. число: ישנים"],
+            ["🗑️ Удалить", "⬅️ В главное меню"],
+        ),
+        # --- Сценарий 3: Глагол, проверка кнопки "Спряжения" ---
+        (
+            {
+                "word_id": 3,
+                "hebrew": "לכתוב",
+                "transcription": "lichtov",
+                "part_of_speech": "verb",
+                "translations": [{"translation_text": "to write", "is_primary": True}],
+                "root": "כ.ת.ב",
+                "binyan": "pa'al",
+            },
+            False,
+            None,
+            ["Найдено: *לכתוב*", "\nКорень: כ.ת.ב", "\nБиньян: pa'al"],
+            ["➕ Добавить", "📖 Спряжения", "⬅️ В главное меню"],
+        ),
+    ],
+)
+async def test_display_word_card(
+    word_data, in_dictionary, message_id, expected_text_parts, expected_buttons
+):
+    """Тест: универсальная проверка отображения карточки слова."""
+    context = AsyncMock()
+    user_id = 123
+    chat_id = 456
+
+    # Мокаем UnitOfWork только для этой функции, чтобы не мешать другим тестам
+    with patch("handlers.common.UnitOfWork") as mock_uow_class:
+        mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
+        mock_uow_instance.user_dictionary.is_word_in_dictionary.return_value = (
+            in_dictionary
+        )
+
+        await display_word_card(
+            context,
+            user_id,
+            chat_id,
+            word_data,
+            message_id,
+            # Передаем in_dictionary=None, чтобы симулировать реальный вызов,
+            # где этот параметр определяется внутри функции
+            in_dictionary=None,
+        )
+
+    # Проверяем, был ли вызван правильный метод: edit или send
+    if message_id:
+        context.bot.edit_message_text.assert_called_once()
+        context.bot.send_message.assert_not_called()
+        call_kwargs = context.bot.edit_message_text.call_args.kwargs
+    else:
+        context.bot.send_message.assert_called_once()
+        context.bot.edit_message_text.assert_not_called()
+        call_kwargs = context.bot.send_message.call_args.kwargs
+
+    # Проверяем содержимое текста сообщения
+    sent_text = call_kwargs["text"]
+    for part in expected_text_parts:
+        assert part in sent_text
+
+    # Проверяем кнопки
+    sent_buttons = call_kwargs["reply_markup"].inline_keyboard
+    # "Сплющиваем" массив кнопок в один список для удобства проверки
+    sent_button_texts = [btn.text for row in sent_buttons for btn in row]
+    assert sent_button_texts == expected_buttons
 
 
 # --- Тесты для словаря (Dictionary Handlers) ---
