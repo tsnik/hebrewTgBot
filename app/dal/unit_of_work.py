@@ -8,6 +8,7 @@ from typing import Optional, Type
 
 from config import DB_NAME
 from dal.repositories import WordRepository, UserDictionaryRepository
+from services.connection import write_db_manager
 
 
 class AbstractUnitOfWork(abc.ABC):
@@ -31,9 +32,6 @@ class AbstractUnitOfWork(abc.ABC):
     @abc.abstractmethod
     def rollback(self):
         raise NotImplementedError
-
-
-from services.connection import write_db_manager
 
 
 class UnitOfWork(AbstractUnitOfWork):

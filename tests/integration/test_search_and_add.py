@@ -4,9 +4,8 @@ from unittest.mock import AsyncMock, Mock, patch, PropertyMock
 
 # Импортируем хендлеры и константы из приложения
 from handlers.search import handle_text_message, add_word_to_dictionary
-from config import CB_ADD, CB_DICT_CONFIRM_DELETE
+from config import CB_ADD
 from dal.unit_of_work import UnitOfWork
-from dal.repositories import UserDictionaryRepository
 
 # Используем константы из conftest для консистентности
 TEST_USER_ID = 123456789

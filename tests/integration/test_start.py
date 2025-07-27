@@ -1,7 +1,6 @@
 import pytest
-from unittest.mock import AsyncMock, Mock, PropertyMock, patch
+from unittest.mock import AsyncMock, Mock, PropertyMock
 from handlers.common import start
-from dal.unit_of_work import UnitOfWork
 
 
 @pytest.mark.asyncio

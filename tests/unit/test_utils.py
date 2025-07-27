@@ -1,5 +1,4 @@
-import pytest
-from app.utils import normalize_hebrew, parse_translations
+from utils import normalize_hebrew, parse_translations
 
 
 def test_normalize_hebrew():

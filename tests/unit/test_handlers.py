@@ -14,14 +14,12 @@ from handlers.search import (
     handle_text_message,
     add_word_to_dictionary,
     show_verb_conjugations,
-    view_word_card_handler,
 )
 
 from handlers.training import (
     training_menu,
     start_flashcard_training,
     show_next_card,
-    show_answer,
     handle_self_evaluation,
     start_verb_trainer,
     end_training,

@@ -1,12 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import logging
 import re
-import sqlite3
 import asyncio
-import time
-from datetime import datetime
-from typing import Tuple, Optional, Dict, Any, List
+from typing import Tuple, Optional, Dict, Any
 from urllib.parse import quote, urljoin
 
 import httpx
@@ -55,7 +51,7 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
                 f"--> parse_verb_page для '{data['hebrew']}': функция parse_translations вернула пустой список."
             )
             return None
-        logger.info(f"--> parse_verb_page: Переводы найдены.")
+        logger.info("--> parse_verb_page: Переводы найдены.")
 
         logger.info("--> parse_verb_page: Поиск транскрипции...")
         transcription_div = infinitive_div.find("div", class_="transcription")
@@ -159,7 +155,7 @@ def parse_noun_or_adjective_page(
                 f"--> parse_noun_or_adjective_page для '{data['hebrew']}': функция parse_translations вернула пустой список."
             )
             return None
-        logger.info(f"--> parse_noun_or_adjective_page: Переводы найдены.")
+        logger.info("--> parse_noun_or_adjective_page: Переводы найдены.")
 
         logger.info("--> parse_noun_or_adjective_page: Поиск транскрипции...")
         transcription_div = soup.find("div", class_="transcription")

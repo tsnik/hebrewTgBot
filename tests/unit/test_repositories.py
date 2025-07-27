@@ -1,6 +1,5 @@
 import pytest
 import sqlite3
-from datetime import datetime
 
 from dal.repositories import WordRepository, UserDictionaryRepository
 

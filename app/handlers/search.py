@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-import asyncio
 import re
-from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from config import logger, CB_ADD, CB_SHOW_VERB, CB_VIEW_CARD
+from config import CB_VIEW_CARD
 from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card

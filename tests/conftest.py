@@ -77,11 +77,6 @@ def memory_db(monkeypatch_session):
     # того, как все тесты в сессии будут выполнены.
 
 
-import dal.unit_of_work
-import services.connection
-import config
-
-
 @pytest.fixture(autouse=True)
 def patch_db_name(monkeypatch, memory_db):
     """

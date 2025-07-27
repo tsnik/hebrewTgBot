@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import sys
-import asyncio
 
 from telegram.ext import (
     Application,
@@ -54,7 +53,6 @@ from handlers.dictionary import (
 from handlers.training import (
     training_menu,
     start_flashcard_training,
-    show_next_card,
     show_answer,
     handle_self_evaluation,
     start_verb_trainer,

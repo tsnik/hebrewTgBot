@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler
+from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
 from config import (
@@ -25,7 +25,6 @@ from config import (
 )
 from dal.unit_of_work import UnitOfWork
 from utils import normalize_hebrew
-from handlers.common import main_menu
 
 # --- Вход в меню тренировок ---
 
@@ -233,7 +232,7 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 break
             else:
                 logger.warning(
-                    f"Ошибка целостности данных: у глагола {verb_candidate['hebrew']} (id: {verb_candidate['word_id']}) нет спряжений. Попытка {i+1}/{VERB_TRAINER_RETRY_ATTEMPTS}"
+                    f"Ошибка целостности данных: у глагола {verb_candidate['hebrew']} (id: {verb_candidate['word_id']}) нет спряжений. Попытка {i + 1}/{VERB_TRAINER_RETRY_ATTEMPTS}"
                 )
 
     if not verb or not conjugation:

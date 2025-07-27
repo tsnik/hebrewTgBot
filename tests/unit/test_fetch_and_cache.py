@@ -1,11 +1,10 @@
 import pytest
 import httpx
 import respx
-from bs4 import BeautifulSoup
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
+import asyncio
 
 from services.parser import fetch_and_cache_word_data, PARSING_EVENTS
-from dal.unit_of_work import UnitOfWork
 from utils import normalize_hebrew
 
 
@@ -176,9 +175,6 @@ async def test_fetch_and_cache_word_data_already_in_cache(monkeypatch):
     assert status == "ok"
     assert data["hebrew"] == search_word
     mock_uow.__enter__().words.create_cached_word.assert_not_called()
-
-
-import asyncio
 
 
 @pytest.mark.asyncio

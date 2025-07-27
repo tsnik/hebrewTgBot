@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
 
@@ -13,7 +13,6 @@ from config import (
     CB_ADD,
     CB_DICT_CONFIRM_DELETE,
     CB_SHOW_VERB,
-    CB_VIEW_CARD,
 )
 from dal.unit_of_work import UnitOfWork
 

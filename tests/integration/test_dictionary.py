@@ -2,8 +2,6 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from handlers.search import add_word_to_dictionary
 from handlers.dictionary import execute_delete_word, view_dictionary_page_handler
-from dal.models import CachedWord, Translation
-from datetime import datetime
 from dal.unit_of_work import UnitOfWork
 from config import CB_DICT_VIEW, CB_DICT_EXECUTE_DELETE, DICT_WORDS_PER_PAGE
 
@@ -129,7 +127,7 @@ async def test_view_dictionary_pagination(memory_db):
 
     # Check text content for page 1
     text_page_1 = args[0]
-    assert f"Ваш словарь (стр. 1):" in text_page_1
+    assert "Ваш словарь (стр. 1):" in text_page_1
     for i in range(DICT_WORDS_PER_PAGE):
         assert f"מילה{i}" in text_page_1
 
@@ -151,7 +149,7 @@ async def test_view_dictionary_pagination(memory_db):
 
     # Check text content for page 2
     text_page_2 = args[0]
-    assert f"Ваш словарь (стр. 2):" in text_page_2
+    assert "Ваш словарь (стр. 2):" in text_page_2
     assert f"מילה{DICT_WORDS_PER_PAGE}" in text_page_2
 
     # Check buttons for page 2

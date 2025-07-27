@@ -10,7 +10,6 @@ from config import (
     CB_DICT_DELETE_MODE,
     CB_DICT_CONFIRM_DELETE,
     CB_DICT_EXECUTE_DELETE,
-    logger,
     DICT_WORDS_PER_PAGE,
 )
 from dal.unit_of_work import UnitOfWork
@@ -105,11 +104,11 @@ async def view_dictionary_page_logic(
     nav_pattern = CB_DICT_DELETE_MODE if deletion_mode else CB_DICT_VIEW
     if page > 0:
         nav_buttons.append(
-            InlineKeyboardButton("◀️", callback_data=f"{nav_pattern}:{page-1}")
+            InlineKeyboardButton("◀️", callback_data=f"{nav_pattern}:{page - 1}")
         )
     if has_next_page:
         nav_buttons.append(
-            InlineKeyboardButton("▶️", callback_data=f"{nav_pattern}:{page+1}")
+            InlineKeyboardButton("▶️", callback_data=f"{nav_pattern}:{page + 1}")
         )
     if nav_buttons:
         keyboard.append(nav_buttons)

@@ -1,9 +1,7 @@
 # tests/conftest.py
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, Mock
-
-import pytest_asyncio
+from unittest.mock import AsyncMock
 
 
 TEST_USER_ID = 123456789

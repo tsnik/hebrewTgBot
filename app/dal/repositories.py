@@ -5,7 +5,6 @@ from datetime import datetime
 import sqlite3
 
 from dal.models import CachedWord, Translation, VerbConjugation
-from config import logger
 
 
 class BaseRepository:
