@@ -1,161 +1,170 @@
+﻿import pytest
+from pathlib import Path
 from bs4 import BeautifulSoup
-from services.parser import parse_verb_page, parse_noun_or_adjective_page
+import unicodedata
 
-# Mock HTML for verb page
-verb_html = """
-<html>
-    <head><title>Test Verb</title></head>
-    <body>
-        <h2 class="page-header">спряжение глагола</h2>
-        <div>
-            <div id="INF-L">
-                <span class="menukad">לִכְתּוֹב</span>
-                <div class="transcription">likhtov</div>
-            </div>
-            <div class="lead">to write</div>
-            <p><b>биньян:</b> פעל</p>
-            <p><b>корень:</b> <span class="menukad">כ-ת-ב</span></p>
-            <div id="AP-M-S">
-                <span class="menukad">כּוֹתֵב</span>
-                <div class="transcription">kotev</div>
-            </div>
-        </div>
-    </body>
-</html>
-"""
+from services.parser import (
+    parse_verb_page,
+    parse_noun_or_adjective_page,
+    parse_translations,
+)
 
-# Mock HTML for noun page
-noun_html = """
-<html>
-    <head><title>Test Noun</title></head>
-    <body>
-        <h2 class="page-header">
-            <span class="menukad">שֻׁלְחָן</span>
-        </h2>
-        <div class="lead">table, desk</div>
-        <div class="transcription">shulchan</div>
-    </body>
-</html>
-"""
+# --- Фикстуры для загрузки реального HTML ---
+
+@pytest.fixture(scope="module")
+def fixtures_path() -> Path:
+    """Возвращает путь к папке с фикстурами."""
+    return Path(__file__).parent.parent / "fixtures"
+
+@pytest.fixture(scope="module")
+def verb_paal_html(fixtures_path: Path) -> str:
+    """Фикстура для глагола ПААЛЬ (lichtov)."""
+    with open(fixtures_path / "1-lichtov.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+@pytest.fixture(scope="module")
+def verb_piel_html(fixtures_path: Path) -> str:
+    """Фикстура для глагола ПИЭЛЬ (ledaber)."""
+    with open(fixtures_path / "2-ledaber.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+@pytest.fixture(scope="module")
+def noun_masculine_html(fixtures_path: Path) -> str:
+    """Фикстура для существительного мужского рода (kelev)."""
+    with open(fixtures_path / "3483-kelev.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+@pytest.fixture(scope="module")
+def noun_feminine_html(fixtures_path: Path) -> str:
+    """Фикстура для существительного женского рода (mita)."""
+    with open(fixtures_path / "4728-mita.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+@pytest.fixture(scope="module")
+def adjective_html(fixtures_path: Path) -> str:
+    """Фикстура для прилагательного (chamud)."""
+    with open(fixtures_path / "5454-chamud.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 
-def test_parse_verb_page():
-    soup = BeautifulSoup(verb_html, "html.parser")
+# --- Основные тесты парсинга ---
+
+def test_parse_verb_paal(verb_paal_html: str):
+    """Тестирует парсинг стандартной страницы глагола (ПААЛЬ)."""
+    soup = BeautifulSoup(verb_paal_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
     parsed_data = parse_verb_page(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "verb"
-    assert parsed_data["hebrew"] == "לִכְתּוֹב"
-    assert parsed_data["transcription"] == "likhtov"
-    assert parsed_data["root"] == "כ-ת-ב"
-    assert parsed_data["binyan"] == "פעל"
-    assert len(parsed_data["translations"]) == 1
-    assert parsed_data["translations"][0]["translation_text"] == "to write"
-    assert len(parsed_data["conjugations"]) == 2
-    assert parsed_data["conjugations"][0]["hebrew_form"] == "לִכְתּוֹב"
-    assert parsed_data["conjugations"][1]["hebrew_form"] == "כּוֹתֵב"
+    assert parsed_data["hebrew"] == "לִכְתֹּב"
+    assert parsed_data["transcription"] == "лихтов"
+    assert parsed_data["root"] == "כ - ת - ב"
+    assert parsed_data["binyan"] == "ПААЛЬ"
+    assert parsed_data["translations"][0]["translation_text"] == "писать"
+    assert len(parsed_data["conjugations"]) > 1
 
+def test_parse_verb_piel(verb_piel_html: str):
+    """Тестирует парсинг стандартной страницы глагола (ПИЭЛЬ)."""
+    soup = BeautifulSoup(verb_piel_html, "html.parser")
+    main_header = soup.find("h2", class_="page-header")
+    parsed_data = parse_verb_page(soup, main_header)
 
-def test_parse_noun_or_adjective_page():
-    soup = BeautifulSoup(noun_html, "html.parser")
+    assert parsed_data is not None
+    assert parsed_data["part_of_speech"] == "verb"
+    assert parsed_data["hebrew"] == "לְדַבֵּר"
+    assert parsed_data["binyan"] == "ПИЭЛЬ"
+    assert parsed_data["root"] == "ד - ב - ר"
+    assert len(parsed_data["conjugations"]) > 1
+
+def test_parse_noun_masculine(noun_masculine_html: str):
+    """Тестирует парсинг страницы существительного мужского рода."""
+    soup = BeautifulSoup(noun_masculine_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
     parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
     assert parsed_data is not None
-    assert parsed_data["is_verb"] is False
-    assert parsed_data["hebrew"] == "שֻׁלְחָן"
-    assert parsed_data["transcription"] == "shulchan"
-    assert len(parsed_data["translations"]) == 2
-    assert parsed_data["translations"][0]["translation_text"] == "table"
-    assert parsed_data["translations"][1]["translation_text"] == "desk"
+    assert parsed_data["part_of_speech"] == "noun"
+    assert parsed_data["hebrew"] == "כֶּלֶב"
+    assert parsed_data["gender"] == "masculine"
+    assert parsed_data["singular_form"] == "כֶּלֶב"
+    assert parsed_data["plural_form"] == "כְּלָבִים"
 
-
-def test_parse_verb_page_no_infinitive_div():
-    html = "<html><body><h2 class='page-header'>спряжение глагола</h2></body></html>"
-    soup = BeautifulSoup(html, "html.parser")
+def test_parse_noun_feminine(noun_feminine_html: str):
+    """Тестирует парсинг страницы существительного женского рода."""
+    soup = BeautifulSoup(noun_feminine_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    assert parse_verb_page(soup, main_header) is None
+    parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
+    assert parsed_data is not None
+    assert parsed_data["part_of_speech"] == "noun"
+    assert parsed_data["hebrew"] == "מִטָּה"
+    assert parsed_data["gender"] == "feminine"
+    assert parsed_data["singular_form"] == "מִטָּה"
+    assert parsed_data["plural_form"] == "מִטּוֹת"
 
-def test_parse_verb_page_no_menukad_in_infinitive():
+def test_parse_adjective(adjective_html: str):
+    """Тестирует парсинг страницы прилагательного."""
+    soup = BeautifulSoup(adjective_html, "html.parser")
+    main_header = soup.find("h2", class_="page-header")
+    parsed_data = parse_noun_or_adjective_page(soup, main_header)
+
+    assert parsed_data is not None
+    assert parsed_data["part_of_speech"] == "adjective"
+    assert parsed_data["hebrew"] == "חָמוּד"
+    assert parsed_data["masculine_singular"] == "חָמוּד"
+    assert parsed_data["feminine_singular"] == "חֲמוּדָה"
+    assert parsed_data["masculine_plural"] == "חֲמוּדִים" 
+    assert parsed_data["feminine_plural"] == "חֲמוּדוֹת"
+
+# --- Тесты на пограничные случаи ---
+
+def test_parse_verb_page_missing_elements():
+    """Тестирует парсинг глагола при отсутствии корня и биньяна."""
     html = """
-    <html><body><h2 class="page-header">спряжение глагола</h2>
-    <div id="INF-L"><div class="transcription">likhtov</div></div>
+    <html><body>
+        <h2 class="page-header">спряжение глагола</h2>
+        <div id="INF-L"><span class="menukad">לִכְתּוֹב</span></div>
+        <div class="lead">to write</div>
     </body></html>
     """
     soup = BeautifulSoup(html, "html.parser")
-    main_header = soup.find("h2", class_="page-header")
-    assert parse_verb_page(soup, main_header) is None
-
-
-def test_parse_verb_page_no_lead_div():
-    html = """
-    <html><body><h2 class="page-header">спряжение глагола</h2>
-    <div id="INF-L"><span class="menukad">לִכְתּוֹב</span><div class="transcription">likhtov</div></div>
-    </body></html>
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    main_header = soup.find("h2", class_="page-header")
-    assert parse_verb_page(soup, main_header) is None
-
-
-def test_parse_verb_page_no_root_or_binyan():
-    soup = BeautifulSoup(verb_html, "html.parser")
-    # Intentionally remove root and binyan paragraphs
-    for p in soup.find_all("p"):
-        p.decompose()
     main_header = soup.find("h2", class_="page-header")
     parsed_data = parse_verb_page(soup, main_header)
+    
     assert parsed_data is not None
     assert parsed_data["root"] is None
     assert parsed_data["binyan"] is None
 
+def test_parser_fails_gracefully():
+    """Проверяет, что парсеры возвращают None при отсутствии критических элементов."""
+    # Глагол без блока инфинитива
+    html_verb = "<html><body><h2 class='page-header'>спряжение глагола</h2></body></html>"
+    soup_verb = BeautifulSoup(html_verb, "html.parser")
+    assert parse_verb_page(soup_verb, soup_verb.find("h2")) is None
 
-def test_parse_verb_page_no_conjugations():
-    html = """
-    <html>
-        <head><title>Test Verb No Conjugations</title></head>
-        <body>
-            <h2 class="page-header">спряжение глагола</h2>
-            <div>
-                <div id="INF-L">
-                    <span class="menukad">לִכְתּוֹב</span>
-                    <div class="transcription">likhtov</div>
-                </div>
-                <div class="lead">to write</div>
-                <p><b>биньян:</b> פעל</p>
-                <p><b>корень:</b> <span class="menukad">כ-ת-ב</span></p>
-            </div>
-        </body>
-    </html>
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_verb_page(soup, main_header)
-    assert parsed_data is not None
-    assert len(parsed_data["conjugations"]) == 1  # Only infinitive
+    # Существительное без ивритского написания
+    html_noun = '<html><body><h2 class="page-header">существительное</h2><div class="lead">table</div></body></html>'
+    soup_noun = BeautifulSoup(html_noun, "html.parser")
+    assert parse_noun_or_adjective_page(soup_noun, soup_noun.find("h2")) is None
 
+# --- Тесты утилиты парсинга переводов ---
 
-def test_parse_noun_or_adjective_page_no_menukad():
-    html = """
-    <html><head><title>Test Noun</title></head>
-    <body><h2 class="page-header"></h2><div class="lead">table, desk</div>
-    <div class="transcription">shulchan</div></body></html>
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_noun_or_adjective_page(soup, main_header)
-    assert parsed_data is None
+def test_parse_translations_simple():
+    assert parse_translations("word") == [{"translation_text": "word", "context_comment": None, "is_primary": True}]
 
+def test_parse_translations_multiple_simple():
+    assert parse_translations("word, term") == [
+        {"translation_text": "word", "context_comment": None, "is_primary": True},
+        {"translation_text": "term", "context_comment": None, "is_primary": False},
+    ]
 
-def test_parse_noun_or_adjective_page_no_lead_div():
-    html = """
-    <html><head><title>Test Noun</title></head>
-    <body><h2 class="page-header"><span class="menukad">שֻׁלְחָן</span></h2>
-    <div class="transcription">shulchan</div></body></html>
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_noun_or_adjective_page(soup, main_header)
-    assert parsed_data is None
+def test_parse_translations_with_context():
+    raw_text = "peace, quiet (formal); hello, goodbye (colloquial)"
+    expected = [
+        {"translation_text": "peace", "context_comment": "formal", "is_primary": True},
+        {"translation_text": "quiet", "context_comment": "formal", "is_primary": False},
+        {"translation_text": "hello", "context_comment": "colloquial", "is_primary": False},
+        {"translation_text": "goodbye", "context_comment": "colloquial", "is_primary": False},
+    ]
+    assert parse_translations(raw_text) == expected
