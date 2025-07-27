@@ -3,12 +3,15 @@ from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 from handlers.common import start
 from dal.unit_of_work import UnitOfWork
 
+
 @pytest.mark.asyncio
 async def test_start_command(memory_db):
     """Test the /start command."""
     update = Mock()
     update.message = AsyncMock()
-    type(update).effective_user = PropertyMock(return_value=Mock(id=123, first_name="Test", username="testuser"))
+    type(update).effective_user = PropertyMock(
+        return_value=Mock(id=123, first_name="Test", username="testuser")
+    )
     context = Mock()
     context.bot = AsyncMock()
 

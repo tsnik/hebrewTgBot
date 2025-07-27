@@ -9,6 +9,7 @@ from typing import Optional, Type
 from config import DB_NAME
 from dal.repositories import WordRepository, UserDictionaryRepository
 
+
 class AbstractUnitOfWork(abc.ABC):
     words: WordRepository
     user_dictionary: UserDictionaryRepository
@@ -21,8 +22,7 @@ class AbstractUnitOfWork(abc.ABC):
         exc_type: Optional[Type[BaseException]],
         exc_value: Optional[BaseException],
         traceback: Optional[TracebackType],
-    ):
-        ...
+    ): ...
 
     @abc.abstractmethod
     def commit(self):
@@ -34,6 +34,7 @@ class AbstractUnitOfWork(abc.ABC):
 
 
 from services.connection import write_db_manager
+
 
 class UnitOfWork(AbstractUnitOfWork):
     def __init__(self, db_name: str = DB_NAME):

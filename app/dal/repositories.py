@@ -66,21 +66,25 @@ class WordRepository(BaseRepository):
         cursor.execute(query, (word_id,))
         return cursor.fetchone()
 
-    def find_word_by_normalized_form(self, normalized_word: str) -> Optional[CachedWord]:
+    def find_word_by_normalized_form(
+        self, normalized_word: str
+    ) -> Optional[CachedWord]:
         cursor = self.connection.cursor()
         word_id = None
 
-        conjugation_query = "SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?"
+        conjugation_query = (
+            "SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?"
+        )
         cursor.execute(conjugation_query, (normalized_word,))
         conjugation = cursor.fetchone()
         if conjugation:
-            word_id = conjugation['word_id']
+            word_id = conjugation["word_id"]
         else:
             word_query = "SELECT word_id FROM cached_words WHERE normalized_hebrew = ?"
             cursor.execute(word_query, (normalized_word,))
             word_data_row = cursor.fetchone()
             if word_data_row:
-                word_id = word_data_row['word_id']
+                word_id = word_data_row["word_id"]
 
         if not word_id:
             return None
@@ -92,7 +96,7 @@ class WordRepository(BaseRepository):
         cursor = self.connection.cursor()
         cursor.execute(query, (word_id,))
         result = cursor.fetchone()
-        return result['hebrew'] if result else None
+        return result["hebrew"] if result else None
 
     def create_cached_word(
         self,
@@ -103,7 +107,7 @@ class WordRepository(BaseRepository):
         root: Optional[str],
         binyan: Optional[str],
         translations: List[Dict[str, Any]],
-        conjugations: List[Dict[str, Any]]
+        conjugations: List[Dict[str, Any]],
     ) -> int:
         cursor = self.connection.cursor()
 
@@ -112,16 +116,30 @@ class WordRepository(BaseRepository):
             (hebrew, normalized_hebrew, transcription, is_verb, root, binyan, fetched_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """
-        cursor.execute(word_query, (
-            hebrew, normalized_hebrew, transcription, is_verb, root, binyan, datetime.now()
-        ))
+        cursor.execute(
+            word_query,
+            (
+                hebrew,
+                normalized_hebrew,
+                transcription,
+                is_verb,
+                root,
+                binyan,
+                datetime.now(),
+            ),
+        )
         word_id = cursor.lastrowid
         if not word_id:
             raise Exception("Failed to get last row id for new word.")
 
         if translations:
             translations_to_insert = [
-                (word_id, t['translation_text'], t.get('context_comment'), t['is_primary'])
+                (
+                    word_id,
+                    t["translation_text"],
+                    t.get("context_comment"),
+                    t["is_primary"],
+                )
                 for t in translations
             ]
             translations_query = """
@@ -132,7 +150,14 @@ class WordRepository(BaseRepository):
 
         if conjugations:
             conjugations_to_insert = [
-                (word_id, c['tense'], c['person'], c['hebrew_form'], c['normalized_hebrew_form'], c['transcription'])
+                (
+                    word_id,
+                    c["tense"],
+                    c["person"],
+                    c["hebrew_form"],
+                    c["normalized_hebrew_form"],
+                    c["transcription"],
+                )
                 for c in conjugations
             ]
             conjugations_query = """
@@ -161,7 +186,9 @@ class UserDictionaryRepository(BaseRepository):
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, word_id))
 
-    def get_dictionary_page(self, user_id: int, page: int, page_size: int) -> List[Dict[str, Any]]:
+    def get_dictionary_page(
+        self, user_id: int, page: int, page_size: int
+    ) -> List[Dict[str, Any]]:
         limit = page_size + 1
         offset = page * page_size
         query = """
@@ -184,7 +211,9 @@ class UserDictionaryRepository(BaseRepository):
         result = cursor.fetchone()
         return result is not None
 
-    def get_user_words_for_training(self, user_id: int, limit: int) -> List[Dict[str, Any]]:
+    def get_user_words_for_training(
+        self, user_id: int, limit: int
+    ) -> List[Dict[str, Any]]:
         query = """
             SELECT cw.*, t.translation_text
             FROM cached_words cw
@@ -199,12 +228,16 @@ class UserDictionaryRepository(BaseRepository):
         return cursor.fetchall()
 
     def get_srs_level(self, user_id: int, word_id: int) -> Optional[Dict[str, Any]]:
-        query = "SELECT srs_level FROM user_dictionary WHERE user_id = ? AND word_id = ?"
+        query = (
+            "SELECT srs_level FROM user_dictionary WHERE user_id = ? AND word_id = ?"
+        )
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, word_id))
         return cursor.fetchone()
 
-    def update_srs_level(self, srs_level: int, next_review_at: datetime, user_id: int, word_id: int):
+    def update_srs_level(
+        self, srs_level: int, next_review_at: datetime, user_id: int, word_id: int
+    ):
         query = "UPDATE user_dictionary SET srs_level = ?, next_review_at = ? WHERE user_id = ? AND word_id = ?"
         cursor = self.connection.cursor()
         cursor.execute(query, (srs_level, next_review_at, user_id, word_id))

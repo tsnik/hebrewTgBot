@@ -25,6 +25,7 @@ MOCK_PEALIM_HTML = """
 </html>
 """
 
+
 @pytest.mark.asyncio
 @patch("services.parser.httpx.AsyncClient")  # Патчим HTTP-клиент в модуле парсера
 async def test_full_search_and_add_scenario(mock_async_client, mock_context):
@@ -43,8 +44,12 @@ async def test_full_search_and_add_scenario(mock_async_client, mock_context):
     mock_response.text = MOCK_PEALIM_HTML
     mock_response.status_code = 200
     # Парсер следует редиректам, поэтому мокаем итоговый URL
-    type(mock_response).url = PropertyMock(return_value="https://www.pealim.com/ru/dict/1234-bdika/")
-    mock_async_client.return_value.__aenter__.return_value.get.return_value = mock_response
+    type(mock_response).url = PropertyMock(
+        return_value="https://www.pealim.com/ru/dict/1234-bdika/"
+    )
+    mock_async_client.return_value.__aenter__.return_value.get.return_value = (
+        mock_response
+    )
 
     # ============================================
     # --- Часть 1: Поиск нового слова ---
@@ -57,27 +62,33 @@ async def test_full_search_and_add_scenario(mock_async_client, mock_context):
     search_update.message.text = user_message_text
     # Мокаем ответ "Ищу слово..."
     search_update.message.reply_text.return_value = AsyncMock(message_id=111)
-    type(search_update).effective_user = PropertyMock(return_value=Mock(id=TEST_USER_ID))
-    type(search_update).effective_chat = PropertyMock(return_value=Mock(id=TEST_CHAT_ID))
+    type(search_update).effective_user = PropertyMock(
+        return_value=Mock(id=TEST_USER_ID)
+    )
+    type(search_update).effective_chat = PropertyMock(
+        return_value=Mock(id=TEST_CHAT_ID)
+    )
 
     # 1.2. Вызываем основной обработчик текстовых сообщений
-    with patch('handlers.search.display_word_card') as mock_display_word_card:
+    with patch("handlers.search.display_word_card") as mock_display_word_card:
         await handle_text_message(search_update, mock_context)
 
         # 1.3. Проверяем результат
         # Убеждаемся, что сообщение "Ищу..." было сначала отправлено
-        search_update.message.reply_text.assert_called_once_with("🔎 Ищу слово во внешнем словаре...")
+        search_update.message.reply_text.assert_called_once_with(
+            "🔎 Ищу слово во внешнем словаре..."
+        )
 
         # Проверяем, что display_word_card была вызвана
         mock_display_word_card.assert_called_once()
 
         # Получаем аргументы вызова display_word_card для детальной проверки
         _call_args, call_kwargs = mock_display_word_card.call_args
-        print (call_kwargs)
-        word_data = call_kwargs['word_data']
+        print(call_kwargs)
+        word_data = call_kwargs["word_data"]
 
         # Проверяем наличие кнопки "Добавить"
-        assert word_data['hebrew'] == "בדיקה"
+        assert word_data["hebrew"] == "בדיקה"
 
     with UnitOfWork() as uow:
         word = uow.words.find_word_by_normalized_form("בדיקה")
@@ -99,13 +110,13 @@ async def test_full_search_and_add_scenario(mock_async_client, mock_context):
     type(mock_query).from_user = PropertyMock(return_value=Mock(id=TEST_USER_ID))
 
     # 2.2. Вызываем обработчик добавления слова
-    with patch('handlers.search.display_word_card') as mock_display_word_card:
+    with patch("handlers.search.display_word_card") as mock_display_word_card:
         await add_word_to_dictionary(add_update, mock_context)
 
         # 2.3. Проверяем итоговый результат
         mock_display_word_card.assert_called_once()
         _call_args, call_kwargs = mock_display_word_card.call_args
-        assert call_kwargs['in_dictionary'] is True
+        assert call_kwargs["in_dictionary"] is True
 
     # Финальная проверка БД: слово теперь должно быть в словаре пользователя
     with UnitOfWork() as uow:

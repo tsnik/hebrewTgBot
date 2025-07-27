@@ -5,14 +5,33 @@ from datetime import datetime
 # Эти импорты верны, так как они отражают структуру вашего проекта
 from dal.models import CachedWord, Translation
 from handlers.common import start, main_menu
-from handlers.dictionary import view_dictionary_page_handler, confirm_delete_word, execute_delete_word
-from handlers.search import handle_text_message, add_word_to_dictionary, show_verb_conjugations, view_word_card_handler
+from handlers.dictionary import (
+    view_dictionary_page_handler,
+    confirm_delete_word,
+    execute_delete_word,
+)
+from handlers.search import (
+    handle_text_message,
+    add_word_to_dictionary,
+    show_verb_conjugations,
+    view_word_card_handler,
+)
 
-from handlers.training import training_menu, start_flashcard_training, show_next_card, show_answer, handle_self_evaluation, start_verb_trainer, end_training, check_verb_answer
+from handlers.training import (
+    training_menu,
+    start_flashcard_training,
+    show_next_card,
+    show_answer,
+    handle_self_evaluation,
+    start_verb_trainer,
+    end_training,
+    check_verb_answer,
+)
 from config import CB_EVAL_CORRECT, CB_EVAL_INCORRECT, VERB_TRAINER_RETRY_ATTEMPTS
 
 
 # --- Тесты для общих обработчиков (не требуют патчинга БД) ---
+
 
 @pytest.mark.asyncio
 async def test_start():
@@ -23,13 +42,15 @@ async def test_start():
     context = MagicMock()
 
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.common.UnitOfWork') as mock_uow_class:
+    with patch("handlers.common.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
 
         await start(update, context)
 
         # Проверяем, что пользователь был добавлен в БД
-        mock_uow_instance.user_dictionary.add_user.assert_called_once_with(123, "Test", "testuser")
+        mock_uow_instance.user_dictionary.add_user.assert_called_once_with(
+            123, "Test", "testuser"
+        )
         mock_uow_instance.commit.assert_called_once()
 
     update.message.reply_text.assert_called_once()
@@ -50,6 +71,7 @@ async def test_main_menu():
 
 # --- Тесты для словаря (Dictionary Handlers) ---
 
+
 @pytest.mark.asyncio
 async def test_view_dictionary_page_handler_with_words():
     """Тест отображения страницы словаря, когда слова есть."""
@@ -59,11 +81,11 @@ async def test_view_dictionary_page_handler_with_words():
     context = MagicMock()
 
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.dictionary.UnitOfWork') as mock_uow_class:
+    with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.user_dictionary.get_dictionary_page.return_value = [
-            {'word_id': 1, 'hebrew': 'שלום', 'translation_text': 'привет'},
-            {'word_id': 2, 'hebrew': 'כלב', 'translation_text': 'собака'},
+            {"word_id": 1, "hebrew": "שלום", "translation_text": "привет"},
+            {"word_id": 2, "hebrew": "כלב", "translation_text": "собака"},
         ]
 
         await view_dictionary_page_handler(update, context)
@@ -84,14 +106,16 @@ async def test_view_dictionary_page_handler_empty():
     context = MagicMock()
 
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.dictionary.UnitOfWork') as mock_uow_class:
+    with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.user_dictionary.get_dictionary_page.return_value = []
 
         await view_dictionary_page_handler(update, context)
 
     update.callback_query.edit_message_text.assert_called_once()
-    assert "Ваш словарь пуст" in update.callback_query.edit_message_text.call_args.args[0]
+    assert (
+        "Ваш словарь пуст" in update.callback_query.edit_message_text.call_args.args[0]
+    )
 
 
 @pytest.mark.asyncio
@@ -107,45 +131,60 @@ async def test_delete_word_flow():
     # --- Шаг 1: Вход в режим удаления ---
     update.callback_query.data = f"dict:delete_mode:{page}"
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.dictionary.UnitOfWork') as mock_uow_class:
+    with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.user_dictionary.get_dictionary_page.return_value = [
-            {'word_id': word_id_to_delete, 'hebrew': 'שלום', 'translation_text': 'hello'}
+            {
+                "word_id": word_id_to_delete,
+                "hebrew": "שלום",
+                "translation_text": "hello",
+            }
         ]
         await view_dictionary_page_handler(update, context)
 
     update.callback_query.edit_message_text.assert_called_once()
-    assert "Выберите слово для удаления" in update.callback_query.edit_message_text.call_args.args[0]
+    assert (
+        "Выберите слово для удаления"
+        in update.callback_query.edit_message_text.call_args.args[0]
+    )
     update.callback_query.reset_mock()
 
     # --- Шаг 2: Выбор слова для удаления (открытие диалога подтверждения) ---
     update.callback_query.data = f"dict:confirm_delete:{word_id_to_delete}:{page}"
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.dictionary.UnitOfWork') as mock_uow_class:
+    with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.get_word_hebrew_by_id.return_value = "שלום"
         await confirm_delete_word(update, context)
 
     update.callback_query.edit_message_text.assert_called_once()
-    assert "Вы уверены, что хотите удалить слово 'שלום'" in update.callback_query.edit_message_text.call_args.args[0]
+    assert (
+        "Вы уверены, что хотите удалить слово 'שלום'"
+        in update.callback_query.edit_message_text.call_args.args[0]
+    )
     update.callback_query.reset_mock()
 
     # --- Шаг 3: Подтверждение и фактическое удаление ---
     update.callback_query.data = f"dict:execute_delete:{word_id_to_delete}:{page}"
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.dictionary.UnitOfWork') as mock_uow_class:
+    with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.user_dictionary.get_dictionary_page.return_value = []
         await execute_delete_word(update, context)
 
-    mock_uow_instance.user_dictionary.remove_word_from_dictionary.assert_called_once_with(user_id, word_id_to_delete)
+    mock_uow_instance.user_dictionary.remove_word_from_dictionary.assert_called_once_with(
+        user_id, word_id_to_delete
+    )
     mock_uow_instance.commit.assert_called_once()
 
     update.callback_query.edit_message_text.assert_called_once()
-    assert "Ваш словарь пуст" in update.callback_query.edit_message_text.call_args.args[0]
+    assert (
+        "Ваш словарь пуст" in update.callback_query.edit_message_text.call_args.args[0]
+    )
 
 
 # --- Тесты для поиска (Search Handlers) ---
+
 
 @pytest.mark.asyncio
 async def test_add_word_to_dictionary():
@@ -157,27 +196,35 @@ async def test_add_word_to_dictionary():
     context = MagicMock()
 
     mock_word_data = CachedWord(
-        word_id=word_id, hebrew='שלום', normalized_hebrew='שלום', is_verb=False,
+        word_id=word_id,
+        hebrew="שלום",
+        normalized_hebrew="שלום",
+        is_verb=False,
         fetched_at=datetime.now(),
         translations=[
             Translation(
-                translation_id=101, word_id=word_id, translation_text='hello',
-                is_primary=True, context_comment=None
+                translation_id=101,
+                word_id=word_id,
+                translation_text="hello",
+                is_primary=True,
+                context_comment=None,
             )
         ],
-        conjugations=[]
+        conjugations=[],
     )
 
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.search.UnitOfWork') as mock_uow_class:
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.get_word_by_id.return_value = mock_word_data
 
         # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-        with patch('handlers.search.display_word_card') as mock_display:
+        with patch("handlers.search.display_word_card") as mock_display:
             await add_word_to_dictionary(update, context)
 
-    mock_uow_instance.user_dictionary.add_word_to_dictionary.assert_called_once_with(user_id, word_id)
+    mock_uow_instance.user_dictionary.add_word_to_dictionary.assert_called_once_with(
+        user_id, word_id
+    )
     mock_uow_instance.commit.assert_called_once()
     mock_display.assert_called_once()
 
@@ -191,24 +238,30 @@ async def test_handle_text_message_word_not_in_db_found_externally():
     context.bot.edit_message_text = AsyncMock()
 
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.search.UnitOfWork') as mock_uow_class:
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.find_word_by_normalized_form.return_value = None
 
         # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-        with patch('handlers.search.fetch_and_cache_word_data') as mock_fetch:
-            mock_fetch.return_value = ('ok', {'word_id': 99, 'hebrew': 'חדש', 'translations': []})
+        with patch("handlers.search.fetch_and_cache_word_data") as mock_fetch:
+            mock_fetch.return_value = (
+                "ok",
+                {"word_id": 99, "hebrew": "חדש", "translations": []},
+            )
 
             # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-            with patch('handlers.search.display_word_card') as mock_display:
+            with patch("handlers.search.display_word_card") as mock_display:
                 await handle_text_message(update, context)
 
-    update.message.reply_text.assert_called_once_with("🔎 Ищу слово во внешнем словаре...")
+    update.message.reply_text.assert_called_once_with(
+        "🔎 Ищу слово во внешнем словаре..."
+    )
     mock_fetch.assert_called_once()
     mock_display.assert_called_once()
 
 
 # --- Тесты для тренировок (Training Handlers) ---
+
 
 @pytest.mark.asyncio
 async def test_start_flashcard_training_no_words():
@@ -219,14 +272,17 @@ async def test_start_flashcard_training_no_words():
     context = MagicMock()
 
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.training.UnitOfWork') as mock_uow_class:
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.user_dictionary.get_user_words_for_training.return_value = []
 
         await start_flashcard_training(update, context)
 
     update.callback_query.edit_message_text.assert_called_once()
-    assert "В словаре нет слов" in update.callback_query.edit_message_text.call_args.args[0]
+    assert (
+        "В словаре нет слов"
+        in update.callback_query.edit_message_text.call_args.args[0]
+    )
 
 
 @pytest.mark.asyncio
@@ -238,7 +294,7 @@ async def test_start_verb_trainer_no_verbs():
     context = MagicMock()
 
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
-    with patch('handlers.training.UnitOfWork') as mock_uow_class:
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.get_random_verb_for_training.return_value = None
 
@@ -246,14 +302,20 @@ async def test_start_verb_trainer_no_verbs():
 
     mock_uow_instance.words.get_random_verb_for_training.assert_called_with(user_id)
     update.callback_query.edit_message_text.assert_called_once()
-    assert "В вашем словаре нет глаголов для тренировки" in update.callback_query.edit_message_text.call_args.args[0]
-    
-    
+    assert (
+        "В вашем словаре нет глаголов для тренировки"
+        in update.callback_query.edit_message_text.call_args.args[0]
+    )
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("text_input, error_message", [
-    ("word", "Пожалуйста, используйте только буквы иврита, пробелы и дефисы."),
-    ("שלום לך", "Пожалуйста, отправляйте только по одному слову за раз.")
-])
+@pytest.mark.parametrize(
+    "text_input, error_message",
+    [
+        ("word", "Пожалуйста, используйте только буквы иврита, пробелы и дефисы."),
+        ("שלום לך", "Пожалуйста, отправляйте только по одному слову за раз."),
+    ],
+)
 async def test_handle_text_message_invalid_input(text_input, error_message):
     """Тест: обработка невалидного ввода (не-иврит, несколько слов)."""
     update = AsyncMock()
@@ -263,8 +325,8 @@ async def test_handle_text_message_invalid_input(text_input, error_message):
     await handle_text_message(update, context)
 
     update.message.reply_text.assert_called_once_with(error_message)
-    
-    
+
+
 @pytest.mark.asyncio
 async def test_handle_text_message_word_in_db():
     """Тест: слово найдено в локальной базе данных."""
@@ -272,55 +334,70 @@ async def test_handle_text_message_word_in_db():
     update.message.text = "שלום"
     update.effective_user.id = 123
     context = MagicMock()
-    
-    mock_word_data = MagicMock()
-    mock_word_data.model_dump.return_value = {'word_id': 1, 'hebrew': 'שלום'}
 
-    with patch('handlers.search.UnitOfWork') as mock_uow_class:
+    mock_word_data = MagicMock()
+    mock_word_data.model_dump.return_value = {"word_id": 1, "hebrew": "שלום"}
+
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
-        mock_uow_instance.words.find_word_by_normalized_form.return_value = mock_word_data
-        
-        with patch('handlers.search.display_word_card') as mock_display:
+        mock_uow_instance.words.find_word_by_normalized_form.return_value = (
+            mock_word_data
+        )
+
+        with patch("handlers.search.display_word_card") as mock_display:
             await handle_text_message(update, context)
 
-            mock_uow_instance.words.find_word_by_normalized_form.assert_called_once_with("שלום")
+            mock_uow_instance.words.find_word_by_normalized_form.assert_called_once_with(
+                "שלום"
+            )
             mock_display.assert_called_once()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status, message", [
-    ('not_found', "Слово 'מילה' не найдено."),
-    ('error', "Внешний сервис словаря временно недоступен. Попробуйте, пожалуйста, позже."),
-    ('db_error', "Произошла внутренняя ошибка при сохранении слова. Пожалуйста, попробуйте позже.")
-])
+@pytest.mark.parametrize(
+    "status, message",
+    [
+        ("not_found", "Слово 'מילה' не найдено."),
+        (
+            "error",
+            "Внешний сервис словаря временно недоступен. Попробуйте, пожалуйста, позже.",
+        ),
+        (
+            "db_error",
+            "Произошла внутренняя ошибка при сохранении слова. Пожалуйста, попробуйте позже.",
+        ),
+    ],
+)
 async def test_handle_text_message_external_search_failures(status, message):
     """Тест: обработка различных ошибок от внешнего сервиса."""
     update = AsyncMock()
     update.message.text = "מילה"
     update.effective_chat.id = 12345
     context = AsyncMock()
-    
+
     # Мокаем сообщение-статус, чтобы у него был message_id для редактирования
     status_message = AsyncMock()
     status_message.message_id = 54321
     update.message.reply_text.return_value = status_message
 
-    with patch('handlers.search.UnitOfWork') as mock_uow_class:
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.find_word_by_normalized_form.return_value = None
 
-        with patch('handlers.search.fetch_and_cache_word_data', new_callable=AsyncMock) as mock_fetch:
+        with patch(
+            "handlers.search.fetch_and_cache_word_data", new_callable=AsyncMock
+        ) as mock_fetch:
             mock_fetch.return_value = (status, None)
-            
+
             await handle_text_message(update, context)
 
-            update.message.reply_text.assert_called_once_with("🔎 Ищу слово во внешнем словаре...")
-            context.bot.edit_message_text.assert_called_once_with(
-                message, 
-                chat_id=12345, 
-                message_id=54321
+            update.message.reply_text.assert_called_once_with(
+                "🔎 Ищу слово во внешнем словаре..."
             )
-            
+            context.bot.edit_message_text.assert_called_once_with(
+                message, chat_id=12345, message_id=54321
+            )
+
 
 @pytest.mark.asyncio
 async def test_show_verb_conjugations_success():
@@ -329,24 +406,36 @@ async def test_show_verb_conjugations_success():
     update.callback_query.data = "verb:show:1"
     context = MagicMock()
     word_id = 1
-    
-    mock_conjugations = [MagicMock(tense="PAST", person="1st singular", hebrew_form="אני הייתי", transcription="ani hayiti")]
 
-    with patch('handlers.search.UnitOfWork') as mock_uow_class:
+    mock_conjugations = [
+        MagicMock(
+            tense="PAST",
+            person="1st singular",
+            hebrew_form="אני הייתי",
+            transcription="ani hayiti",
+        )
+    ]
+
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.get_word_hebrew_by_id.return_value = "להיות"
-        mock_uow_instance.words.get_conjugations_for_word.return_value = mock_conjugations
-        
+        mock_uow_instance.words.get_conjugations_for_word.return_value = (
+            mock_conjugations
+        )
+
         await show_verb_conjugations(update, context)
-        
-        mock_uow_instance.words.get_conjugations_for_word.assert_called_once_with(word_id)
+
+        mock_uow_instance.words.get_conjugations_for_word.assert_called_once_with(
+            word_id
+        )
         update.callback_query.answer.assert_called_once()
         update.callback_query.edit_message_text.assert_called_once()
-        
+
         call_args, call_kwargs = update.callback_query.edit_message_text.call_args
         assert "Спряжения для *להיות*" in call_args[0]
         assert "*Past*:" in call_args[0]
         assert "_1st singular_: אני הייתי (ani hayiti)" in call_args[0]
+
 
 @pytest.mark.asyncio
 async def test_show_verb_conjugations_not_found():
@@ -355,14 +444,18 @@ async def test_show_verb_conjugations_not_found():
     update.callback_query.data = "verb:show:2"
     context = MagicMock()
 
-    with patch('handlers.search.UnitOfWork') as mock_uow_class:
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.get_conjugations_for_word.return_value = []
-        
+
         await show_verb_conjugations(update, context)
 
         update.callback_query.edit_message_text.assert_called_once()
-        assert "Для этого глагола нет таблицы спряжений" in update.callback_query.edit_message_text.call_args.args[0]
+        assert (
+            "Для этого глагола нет таблицы спряжений"
+            in update.callback_query.edit_message_text.call_args.args[0]
+        )
+
 
 @pytest.mark.asyncio
 async def test_start_flashcard_training_with_words():
@@ -372,65 +465,75 @@ async def test_start_flashcard_training_with_words():
     update.callback_query.from_user.id = 123
     context = MagicMock()
     context.user_data = {}
-    
-    mock_words = [{'word_id': 1, 'hebrew': 'שלום', 'translation_text': 'привет'}]
 
-    with patch('handlers.training.UnitOfWork') as mock_uow_class:
+    mock_words = [{"word_id": 1, "hebrew": "שלום", "translation_text": "привет"}]
+
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
-        mock_uow_instance.user_dictionary.get_user_words_for_training.return_value = mock_words
-        
+        mock_uow_instance.user_dictionary.get_user_words_for_training.return_value = (
+            mock_words
+        )
+
         # Мокаем show_next_card, так как это отдельная функция в цепочке
-        with patch('handlers.training.show_next_card', new_callable=AsyncMock) as mock_show_next:
+        with patch(
+            "handlers.training.show_next_card", new_callable=AsyncMock
+        ) as mock_show_next:
             await start_flashcard_training(update, context)
-            
-            assert context.user_data['words'] == mock_words
-            assert context.user_data['training_mode'] == "train:he_ru"
+
+            assert context.user_data["words"] == mock_words
+            assert context.user_data["training_mode"] == "train:he_ru"
             mock_show_next.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_show_next_card_ends_training():
     """Тест: завершение тренировки, когда слова закончились."""
     update = AsyncMock()
     context = MagicMock()
-    context.user_data = {'words': [], 'idx': 0, 'correct': 0, 'training_mode': 'train:he_ru'}
-    
+    context.user_data = {
+        "words": [],
+        "idx": 0,
+        "correct": 0,
+        "training_mode": "train:he_ru",
+    }
+
     await show_next_card(update, context)
-    
+
     update.callback_query.edit_message_text.assert_called_once()
-    assert "Тренировка окончена!" in update.callback_query.edit_message_text.call_args.args[0]
-    assert context.user_data == {} # Проверяем, что данные были очищены
+    assert (
+        "Тренировка окончена!"
+        in update.callback_query.edit_message_text.call_args.args[0]
+    )
+    assert context.user_data == {}  # Проверяем, что данные были очищены
+
 
 @pytest.mark.asyncio
 # CORRECTED: Use the imported constants instead of hardcoded strings
-@pytest.mark.parametrize("evaluation, expected_srs", [
-    (CB_EVAL_CORRECT, 1),
-    (CB_EVAL_INCORRECT, 0)
-])
+@pytest.mark.parametrize(
+    "evaluation, expected_srs", [(CB_EVAL_CORRECT, 1), (CB_EVAL_INCORRECT, 0)]
+)
 async def test_handle_self_evaluation_logic(evaluation, expected_srs):
     """Тест: обработка самооценки (правильно/неправильно) и обновление SRS."""
     update = AsyncMock()
-    update.callback_query.data = evaluation # Now uses the constant
+    update.callback_query.data = evaluation  # Now uses the constant
     update.callback_query.from_user.id = 123
     context = MagicMock()
-    context.user_data = {
-        'words': [{'word_id': 1}], 
-        'idx': 0, 
-        'correct': 0
-    }
+    context.user_data = {"words": [{"word_id": 1}], "idx": 0, "correct": 0}
 
-    with patch('handlers.training.UnitOfWork') as mock_uow_class:
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         # The current SRS level is 0 before the evaluation
-        mock_uow_instance.user_dictionary.get_srs_level.return_value = {'srs_level': 0}
-        
-        with patch('handlers.training.show_next_card', new_callable=AsyncMock):
-             await handle_self_evaluation(update, context)
-             
-             mock_uow_instance.user_dictionary.update_srs_level.assert_called_once()
-             # This assertion will now pass because the correct logic path is triggered
-             call_args, _ = mock_uow_instance.user_dictionary.update_srs_level.call_args
-             assert call_args[0] == expected_srs
-             mock_uow_instance.commit.assert_called_once()
+        mock_uow_instance.user_dictionary.get_srs_level.return_value = {"srs_level": 0}
+
+        with patch("handlers.training.show_next_card", new_callable=AsyncMock):
+            await handle_self_evaluation(update, context)
+
+            mock_uow_instance.user_dictionary.update_srs_level.assert_called_once()
+            # This assertion will now pass because the correct logic path is triggered
+            call_args, _ = mock_uow_instance.user_dictionary.update_srs_level.call_args
+            assert call_args[0] == expected_srs
+            mock_uow_instance.commit.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_check_verb_answer_correct_and_incorrect():
@@ -440,11 +543,13 @@ async def test_check_verb_answer_correct_and_incorrect():
     update_correct.message.text = "ילך"
     update_correct.effective_user.id = 123
     context_correct = MagicMock()
-    context_correct.user_data = {'answer': {'hebrew_form': 'ילך', 'transcription': 'yelekh', 'word_id': 5}}
-    
-    with patch('handlers.training.UnitOfWork'):
+    context_correct.user_data = {
+        "answer": {"hebrew_form": "ילך", "transcription": "yelekh", "word_id": 5}
+    }
+
+    with patch("handlers.training.UnitOfWork"):
         await check_verb_answer(update_correct, context_correct)
-    
+
     update_correct.message.reply_text.assert_called_once()
     assert "✅ Верно!" in update_correct.message.reply_text.call_args.args[0]
 
@@ -453,28 +558,33 @@ async def test_check_verb_answer_correct_and_incorrect():
     update_incorrect.message.text = "הולך"
     update_incorrect.effective_user.id = 123
     context_incorrect = MagicMock()
-    context_incorrect.user_data = {'answer': {'hebrew_form': 'ילך', 'transcription': 'yelekh', 'word_id': 5}}
+    context_incorrect.user_data = {
+        "answer": {"hebrew_form": "ילך", "transcription": "yelekh", "word_id": 5}
+    }
 
-    with patch('handlers.training.UnitOfWork'):
+    with patch("handlers.training.UnitOfWork"):
         await check_verb_answer(update_incorrect, context_incorrect)
 
     update_incorrect.message.reply_text.assert_called_once()
     assert "❌ Ошибка." in update_incorrect.message.reply_text.call_args.args[0]
-    
+
+
 @pytest.mark.asyncio
 async def test_end_training():
     """Тест: принудительное завершение тренировки."""
     update = AsyncMock()
     context = MagicMock()
-    
+
     await end_training(update, context)
-    
+
     update.callback_query.answer.assert_called_once()
     update.callback_query.edit_message_text.assert_called_once()
-    assert "Тренировка прервана" in update.callback_query.edit_message_text.call_args.kwargs['text']
-    
-    
-    
+    assert (
+        "Тренировка прервана"
+        in update.callback_query.edit_message_text.call_args.kwargs["text"]
+    )
+
+
 @pytest.mark.asyncio
 async def test_training_menu_as_command():
     """Тест: вызов меню тренировок как новой команды, а не колбэка."""
@@ -489,7 +599,9 @@ async def test_training_menu_as_command():
 
     # Проверяем, что было отправлено новое сообщение, а не отредактировано существующее
     context.bot.send_message.assert_called_once()
-    assert "Выберите режим тренировки" in context.bot.send_message.call_args.kwargs['text']
+    assert (
+        "Выберите режим тренировки" in context.bot.send_message.call_args.kwargs["text"]
+    )
 
 
 @pytest.mark.asyncio
@@ -500,22 +612,28 @@ async def test_start_verb_trainer_happy_path():
     context = MagicMock()
     context.user_data = {}
 
-    mock_verb = {'word_id': 10, 'hebrew': 'לכתוב'}
-    mock_conjugation = {'tense': 'FUTURE', 'person': '1st plural', 'hebrew_form': 'נכתוב'}
+    mock_verb = {"word_id": 10, "hebrew": "לכתוב"}
+    mock_conjugation = {
+        "tense": "FUTURE",
+        "person": "1st plural",
+        "hebrew_form": "נכתוב",
+    }
 
-    with patch('handlers.training.UnitOfWork') as mock_uow_class:
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.get_random_verb_for_training.return_value = mock_verb
-        mock_uow_instance.words.get_random_conjugation_for_word.return_value = mock_conjugation
+        mock_uow_instance.words.get_random_conjugation_for_word.return_value = (
+            mock_conjugation
+        )
 
         await start_verb_trainer(update, context)
 
         # Проверяем, что правильные данные сохранились
-        assert context.user_data['answer'] == mock_conjugation
-        
+        assert context.user_data["answer"] == mock_conjugation
+
         # Проверяем, что пользователю задан правильный вопрос
         update.callback_query.edit_message_text.assert_called_once()
-        
+
         # ИСПРАВЛЕНО: Обращаемся к позиционному аргументу args[0]
         call_text = update.callback_query.edit_message_text.call_args.args[0]
         assert "Глагол: *לכתוב*" in call_text
@@ -530,21 +648,25 @@ async def test_start_verb_trainer_retry_logic():
     context = MagicMock()
     context.user_data = {}
 
-    mock_verb_no_conj = {'word_id': 11, 'hebrew': 'פועל_בלי_כלום'}
-    mock_verb_with_conj = {'word_id': 12, 'hebrew': 'לרוץ'}
-    mock_conjugation = {'tense': 'PRESENT', 'person': 'm. plural', 'hebrew_form': 'רצים'}
+    mock_verb_no_conj = {"word_id": 11, "hebrew": "פועל_בלי_כלום"}
+    mock_verb_with_conj = {"word_id": 12, "hebrew": "לרוץ"}
+    mock_conjugation = {
+        "tense": "PRESENT",
+        "person": "m. plural",
+        "hebrew_form": "רצים",
+    }
 
-    with patch('handlers.training.UnitOfWork') as mock_uow_class:
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         # Первый вызов возвращает глагол без спряжений, второй - с ними
         mock_uow_instance.words.get_random_verb_for_training.side_effect = [
             mock_verb_no_conj,
-            mock_verb_with_conj
+            mock_verb_with_conj,
         ]
         # Первый вызов не находит спряжений, второй - находит
         mock_uow_instance.words.get_random_conjugation_for_word.side_effect = [
             None,
-            mock_conjugation
+            mock_conjugation,
         ]
 
         await start_verb_trainer(update, context)
@@ -553,7 +675,7 @@ async def test_start_verb_trainer_retry_logic():
         assert mock_uow_instance.words.get_random_verb_for_training.call_count == 2
         # И дважды пытались найти спряжение
         assert mock_uow_instance.words.get_random_conjugation_for_word.call_count == 2
-        
+
         # Проверяем, что в итоге пользователю показали второй, "удачный" глагол
         update.callback_query.edit_message_text.assert_called_once()
 
@@ -562,6 +684,7 @@ async def test_start_verb_trainer_retry_logic():
         assert "Глагол: *לרוץ*" in call_text
         assert "PRESENT, m. plural" in call_text
 
+
 @pytest.mark.asyncio
 async def test_start_verb_trainer_fails_after_retries():
     """Тест: тренажер глаголов не находит спряжений после всех попыток."""
@@ -569,9 +692,9 @@ async def test_start_verb_trainer_fails_after_retries():
     update.callback_query.from_user.id = 123
     context = MagicMock()
 
-    mock_verb = {'word_id': 11, 'hebrew': 'פועל_בלי_כלום'}
+    mock_verb = {"word_id": 11, "hebrew": "פועל_בלי_כלום"}
 
-    with patch('handlers.training.UnitOfWork') as mock_uow_class:
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         # Всегда возвращаем один и тот же глагол
         mock_uow_instance.words.get_random_verb_for_training.return_value = mock_verb
@@ -581,11 +704,14 @@ async def test_start_verb_trainer_fails_after_retries():
         await start_verb_trainer(update, context)
 
         # Проверяем, что было сделано ровно VERB_TRAINER_RETRY_ATTEMPTS попыток
-        assert mock_uow_instance.words.get_random_verb_for_training.call_count == VERB_TRAINER_RETRY_ATTEMPTS
+        assert (
+            mock_uow_instance.words.get_random_verb_for_training.call_count
+            == VERB_TRAINER_RETRY_ATTEMPTS
+        )
 
         # Проверяем, что было отправлено сообщение об ошибке
         update.callback_query.edit_message_text.assert_called_once()
-        
+
         # CORRECTED: Access the first positional argument instead of a keyword argument
         call_text = update.callback_query.edit_message_text.call_args.args[0]
         assert "Не удалось найти подходящий глагол для тренировки" in call_text
@@ -598,8 +724,8 @@ async def test_check_verb_answer_no_context():
     context = MagicMock()
     # `answer` отсутствует в user_data
     context.user_data = {}
-    
+
     # Мокаем training_menu, чтобы проверить, что произошел выход в него
-    with patch('handlers.training.training_menu', new_callable=AsyncMock) as mock_menu:
+    with patch("handlers.training.training_menu", new_callable=AsyncMock) as mock_menu:
         await check_verb_answer(update, context)
         mock_menu.assert_called_once()
