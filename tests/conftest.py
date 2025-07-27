@@ -87,7 +87,5 @@ def patch_db_name(monkeypatch, memory_db):
     # Шаг 2: КЛЮЧЕВОЕ ИЗМЕНЕНИЕ. Заменяем старые синглтоны новыми.
     # Теперь любой код, импортирующий write_db_manager, получит наш
     # новый, чистый экземпляр, подключенный к изолированной БД этого теста.
-    monkeypatch.setattr(
-        'dal.unit_of_work.write_db_manager',
-        DatabaseConnectionManager(db_name=memory_db, read_only=False)
-    )
+    new_manager = DatabaseConnectionManager(db_name=memory_db, read_only=False)
+    monkeypatch.setattr(dal.unit_of_work, 'write_db_manager', new_manager)
