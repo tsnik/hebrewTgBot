@@ -158,10 +158,7 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
                 result = uow.words.find_word_by_normalized_form(normalized_search_word)
             if result:
                 return 'ok', result.model_dump()
-            else:
-                # This case should not happen in normal operation, as the other task should have cached the word.
-                # However, to make the tests pass, we return not_found here.
-                return 'not_found', None
+            return 'not_found', None
         except asyncio.TimeoutError:
             logger.warning(f"Таймаут ожидания для '{search_word}'.")
             return 'error', None
