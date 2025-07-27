@@ -45,7 +45,7 @@ def test_parse_verb_page():
     parsed_data = parse_verb_page(soup, main_header)
 
     assert parsed_data is not None
-    assert parsed_data["is_verb"] is True
+    assert parsed_data["part_of_speech"] == "verb"
     assert parsed_data["hebrew"] == "לִכְתּוֹב"
     assert parsed_data["transcription"] == "likhtov"
     assert parsed_data["root"] == "כ-ת-ב"

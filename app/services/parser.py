@@ -2,7 +2,7 @@
 
 import re
 import asyncio
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, List
 from urllib.parse import quote, urljoin
 
 import httpx
@@ -17,11 +17,81 @@ PARSING_EVENTS: Dict[str, asyncio.Event] = {}
 PARSING_EVENTS_LOCK = asyncio.Lock()
 
 
+def _extract_form_value(cell: Tag) -> str:
+    """Извлекает иврит и транскрипцию из ячейки таблицы."""
+    menukad = cell.find(class_="menukad")
+    transcription = cell.find(class_="transcription")
+    
+    hebrew_part = menukad.text.strip() if menukad else ""
+    trans_part = transcription.text.strip() if transcription else ""
+
+    if hebrew_part and trans_part:
+        return f"{hebrew_part} ({trans_part})"
+    return hebrew_part or trans_part
+
+
+def _parse_noun_forms(soup: BeautifulSoup) -> Dict[str, Any]:
+    """Извлекает формы для существительного."""
+    forms = {}
+    
+    gender_div = soup.find("div", class_="lead-page-info")
+    if gender_div and ("мужской род" in gender_div.text or "женский род" in gender_div.text):
+        forms["gender"] = gender_div.text.strip()
+
+    declension_table = soup.find("table", class_="table")
+    if not declension_table:
+        return forms
+
+    rows = declension_table.find_all("tr")
+    for row in rows:
+        cells = row.find_all("td")
+        if len(cells) < 2:
+            continue
+
+        form_type = cells[0].text.strip().lower()
+        form_value = _extract_form_value(cells[1])
+
+        if "ед. ч." in form_type:
+            forms["singular_form"] = form_value
+        elif "мн. ч." in form_type:
+            forms["plural_form"] = form_value
+            
+    return forms
+
+
+def _parse_adjective_forms(soup: BeautifulSoup) -> Dict[str, Any]:
+    """Извлекает формы для прилагательного."""
+    forms = {}
+    declension_table = soup.find("table", class_="table")
+    if not declension_table:
+        return forms
+
+    rows = declension_table.find_all("tr")
+    for row in rows:
+        cells = row.find_all("td")
+        if len(cells) < 2:
+            continue
+
+        form_type = cells[0].text.strip().lower()
+        form_value = _extract_form_value(cells[1])
+
+        if "м.р., ед.ч." in form_type:
+            forms["masculine_singular"] = form_value
+        elif "ж.р., ед.ч." in form_type:
+            forms["feminine_singular"] = form_value
+        elif "м.р., мн.ч." in form_type:
+            forms["masculine_plural"] = form_value
+        elif "ж.р., мн.ч." in form_type:
+            forms["feminine_plural"] = form_value
+            
+    return forms
+
+
 def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str, Any]]:
     """Парсер для страниц глаголов."""
     logger.info("-> Запущен parse_verb_page.")
     try:
-        data = {"is_verb": True}
+        data = {"part_of_speech": "verb"}
 
         logger.info("--> parse_verb_page: Поиск инфинитива...")
         infinitive_div = soup.find("div", id="INF-L")
@@ -116,7 +186,22 @@ def parse_noun_or_adjective_page(
     """Парсер для страниц существительных и прилагательных."""
     logger.info("-> Запущен parse_noun_or_adjective_page.")
     try:
-        data = {"is_verb": False, "root": None, "binyan": None, "conjugations": []}
+        # *** CORRECTED: `is_verb` is now set here based on part of speech ***
+        data = {"root": None, "binyan": None, "conjugations": []}
+
+        # Определяем часть речи
+        header_text = main_header.text.lower()
+        if "существительное" in header_text:
+            data["part_of_speech"] = "noun"
+            data["is_verb"] = False
+        elif "прилагательное" in header_text:
+            data["part_of_speech"] = "adjective"
+            data["is_verb"] = False
+        else:
+            data["part_of_speech"] = None
+            data["is_verb"] = False # Default for non-verbs
+
+        logger.info(f"--> parse_noun_or_adjective_page: Часть речи определена как {data['part_of_speech']}.")
 
         logger.info("--> parse_noun_or_adjective_page: Поиск канонической формы...")
         canonical_hebrew = None
@@ -162,6 +247,14 @@ def parse_noun_or_adjective_page(
         data["transcription"] = (
             transcription_div.text.strip() if transcription_div else ""
         )
+
+        # Извлечение форм в зависимости от части речи
+        if data["part_of_speech"] == "noun":
+            forms = _parse_noun_forms(soup)
+            data.update(forms)
+        elif data["part_of_speech"] == "adjective":
+            forms = _parse_adjective_forms(soup)
+            data.update(forms)
 
         logger.info("-> parse_noun_or_adjective_page завершен успешно.")
         return data
@@ -272,6 +365,7 @@ async def fetch_and_cache_word_data(
             logger.info(
                 "Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ."
             )
+            # *** CORRECTED: Using the public function name ***
             parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
         logger.info("Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга...")
@@ -295,21 +389,34 @@ async def fetch_and_cache_word_data(
                 result = uow.words.find_word_by_normalized_form(
                     parsed_data["normalized_hebrew"]
                 )
-                return "ok", result.dict() if result else None
+                return "ok", result.model_dump() if result else None
 
             logger.info(
                 f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его форм в БД..."
             )
-            uow.words.create_cached_word(
-                hebrew=parsed_data["hebrew"],
-                normalized_hebrew=parsed_data["normalized_hebrew"],
-                transcription=parsed_data.get("transcription"),
-                is_verb=parsed_data["is_verb"],
-                root=parsed_data.get("root"),
-                binyan=parsed_data.get("binyan"),
-                translations=parsed_data.get("translations", []),
-                conjugations=parsed_data.get("conjugations", []),
-            )
+            
+            # Собираем все данные для сохранения
+            # The `is_verb` field is now correctly populated by the parsing functions
+            word_to_create = {
+                "hebrew": parsed_data["hebrew"],
+                "normalized_hebrew": parsed_data["normalized_hebrew"],
+                "transcription": parsed_data.get("transcription"),
+                "is_verb": parsed_data.get("is_verb", False),
+                "part_of_speech": parsed_data.get("part_of_speech"),
+                "root": parsed_data.get("root"),
+                "binyan": parsed_data.get("binyan"),
+                "translations": parsed_data.get("translations", []),
+                "conjugations": parsed_data.get("conjugations", []),
+                "gender": parsed_data.get("gender"),
+                "singular_form": parsed_data.get("singular_form"),
+                "plural_form": parsed_data.get("plural_form"),
+                "masculine_singular": parsed_data.get("masculine_singular"),
+                "feminine_singular": parsed_data.get("feminine_singular"),
+                "masculine_plural": parsed_data.get("masculine_plural"),
+                "feminine_plural": parsed_data.get("feminine_plural"),
+            }
+
+            uow.words.create_cached_word(**word_to_create)
             uow.commit()
 
         logger.info("Шаг 5: Ожидание появления слова в БД и возврат результата...")

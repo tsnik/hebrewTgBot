@@ -60,7 +60,7 @@ def test_parse_piel_verb_page():
     parsed_data = parse_verb_page(soup, main_header)
 
     assert parsed_data is not None
-    assert parsed_data["is_verb"] is True
+    assert parsed_data["part_of_speech"] == "verb"
     assert parsed_data["hebrew"] == "לְדַבֵּר"
     assert parsed_data["binyan"] == "פיעל"
     assert parsed_data["root"] == "ד.ב.ר"
@@ -73,7 +73,7 @@ def test_parse_nifal_verb_page():
     parsed_data = parse_verb_page(soup, main_header)
 
     assert parsed_data is not None
-    assert parsed_data["is_verb"] is True
+    assert parsed_data["part_of_speech"] == "verb"
     assert parsed_data["hebrew"] == "לְהִיכָּנֵס"
     assert parsed_data["binyan"] == "נפעל"
     assert parsed_data["root"] == "כ.נ.ס"
@@ -85,14 +85,16 @@ masculine_noun_html = """
 <html>
     <head><title>Test Noun</title></head>
     <body>
-        <h2 class="page-header">
-            <span class="menukad">שֻׁלְחָן</span>
-        </h2>
-        <div class="lead">table, desk</div>
-        <div class="transcription">shulchan</div>
-        <div class="short-table">
-            <div class="stuff-box">m.</div>
-        </div>
+        <h2 class="page-header">существительное <span class="menukad">כֶּלֶב</span></h2>
+        <div class="lead">dog</div>
+        <div class="transcription">kelev</div>
+        <div class="lead-page-info">мужской род</div>
+        <table class="table">
+            <tbody>
+                <tr><td>ед. ч.</td><td><span class="menukad">כֶּלֶב</span><span class="transcription">kelev</span></td></tr>
+                <tr><td>мн. ч.</td><td><span class="menukad">כְּלָבִים</span><span class="transcription">klavim</span></td></tr>
+            </tbody>
+        </table>
     </body>
 </html>
 """
@@ -102,12 +104,16 @@ feminine_noun_html = """
 <html>
     <head><title>Test Noun</title></head>
     <body>
-        <h2 class="page-header">
-            <span class="menukad">מִטָּה</span>
-        </h2>
-        <div class="lead">bed</div>
-        <div class="transcription">mita</div>
-        <div class="stuff-box">f.</div>
+        <h2 class="page-header">существительное <span class="menukad">מִטָּה</span></h2>
+        <div class="lead">dog</div>
+        <div class="transcription">kelev</div>
+        <div class="lead-page-info">мужской род</div>
+        <table class="table">
+            <tbody>
+                <tr><td>ед. ч.</td><td><span class="menukad">מִטָּה</span><span class="transcription">kelev</span></td></tr>
+                <tr><td>мн. ч.</td><td><span class="menukad">מִטָּה</span><span class="transcription">klavim</span></td></tr>
+            </tbody>
+        </table>
     </body>
 </html>
 """
@@ -117,12 +123,17 @@ adjective_html = """
 <html>
     <head><title>Test Adjective</title></head>
     <body>
-        <h2 class="page-header">
-            <span class="menukad">טוֹב</span>
-        </h2>
-        <div class="lead">good</div>
-        <div class="transcription">tov</div>
-        <div class="stuff-box">adj.</div>
+        <h2 class="page-header">прилагательное <span class="menukad">חָמוּד</span></h2>
+        <div class="lead">cute</div>
+        <div class="transcription">chamud</div>
+        <table class="table">
+            <tbody>
+                <tr><td>м.р., ед.ч.</td><td><span class="menukad">חָמוּד</span><span class="transcription">chamud</span></td></tr>
+                <tr><td>ж.р., ед.ч.</td><td><span class="menukad">חֲמוּדָה</span><span class="transcription">chamuda</span></td></tr>
+                <tr><td>м.р., мн.ч.</td><td><span class="menukad">חֲמוּדִים</span><span class="transcription">chamudim</span></td></tr>
+                <tr><td>ж.р., мн.ч.</td><td><span class="menukad">חֲמוּדוֹת</span><span class="transcription">chamudot</span></td></tr>
+            </tbody>
+        </table>
     </body>
 </html>
 """
@@ -134,11 +145,11 @@ def test_parse_masculine_noun_page():
     parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
     assert parsed_data is not None
-    assert parsed_data["is_verb"] is False
-    assert parsed_data["hebrew"] == "שֻׁלְחָן"
+    assert parsed_data["part_of_speech"] == "noun"
+    assert parsed_data["hebrew"] == "כֶּלֶב"
     # The gender is not parsed yet, so this will fail.
     # I will add the gender parsing logic later.
-    # assert parsed_data['gender'] == 'masculine'
+    #assert parsed_data['gender'] == 'masculine'
 
 
 def test_parse_feminine_noun_page():
@@ -147,11 +158,11 @@ def test_parse_feminine_noun_page():
     parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
     assert parsed_data is not None
-    assert parsed_data["is_verb"] is False
+    assert parsed_data["part_of_speech"] == "noun"
     assert parsed_data["hebrew"] == "מִטָּה"
     # The gender is not parsed yet, so this will fail.
     # I will add the gender parsing logic later.
-    # assert parsed_data['gender'] == 'feminine'
+    #assert parsed_data['gender'] == 'feminine'
 
 
 def test_parse_adjective_page():
@@ -160,11 +171,11 @@ def test_parse_adjective_page():
     parsed_data = parse_noun_or_adjective_page(soup, main_header)
 
     assert parsed_data is not None
-    assert parsed_data["is_verb"] is False
-    assert parsed_data["hebrew"] == "טוֹב"
+    assert parsed_data["part_of_speech"] == "adjective"
+    assert parsed_data["hebrew"] == "חָמוּד"
     # The type is not parsed yet, so this will fail.
     # I will add the type parsing logic later.
-    # assert parsed_data['type'] == 'adjective'
+    assert parsed_data['part_of_speech'] == 'adjective'
 
 
 def test_parse_translations_multiple_meanings():
