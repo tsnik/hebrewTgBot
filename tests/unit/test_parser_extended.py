@@ -149,7 +149,7 @@ def test_parse_masculine_noun_page():
     assert parsed_data["hebrew"] == "כֶּלֶב"
     # The gender is not parsed yet, so this will fail.
     # I will add the gender parsing logic later.
-    #assert parsed_data['gender'] == 'masculine'
+    # assert parsed_data['gender'] == 'masculine'
 
 
 def test_parse_feminine_noun_page():
@@ -162,7 +162,7 @@ def test_parse_feminine_noun_page():
     assert parsed_data["hebrew"] == "מִטָּה"
     # The gender is not parsed yet, so this will fail.
     # I will add the gender parsing logic later.
-    #assert parsed_data['gender'] == 'feminine'
+    # assert parsed_data['gender'] == 'feminine'
 
 
 def test_parse_adjective_page():
@@ -175,7 +175,7 @@ def test_parse_adjective_page():
     assert parsed_data["hebrew"] == "חָמוּד"
     # The type is not parsed yet, so this will fail.
     # I will add the type parsing logic later.
-    assert parsed_data['part_of_speech'] == 'adjective'
+    assert parsed_data["part_of_speech"] == "adjective"
 
 
 def test_parse_translations_multiple_meanings():

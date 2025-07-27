@@ -28,7 +28,7 @@ class CachedWord(BaseModel):
     hebrew: str
     normalized_hebrew: str
     transcription: Optional[str] = None
-    part_of_speech: Optional[str] = None 
+    part_of_speech: Optional[str] = None
     root: Optional[str] = None
     binyan: Optional[str] = None
     fetched_at: datetime

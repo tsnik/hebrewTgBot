@@ -2,7 +2,7 @@
 
 import re
 import asyncio
-from typing import Tuple, Optional, Dict, Any, List
+from typing import Tuple, Optional, Dict, Any
 from urllib.parse import quote, urljoin
 
 import httpx
@@ -21,7 +21,7 @@ def _extract_form_value(cell: Tag) -> str:
     """Извлекает иврит и транскрипцию из ячейки таблицы."""
     menukad = cell.find(class_="menukad")
     transcription = cell.find(class_="transcription")
-    
+
     hebrew_part = menukad.text.strip() if menukad else ""
     trans_part = transcription.text.strip() if transcription else ""
 
@@ -33,9 +33,11 @@ def _extract_form_value(cell: Tag) -> str:
 def _parse_noun_forms(soup: BeautifulSoup) -> Dict[str, Any]:
     """Извлекает формы для существительного."""
     forms = {}
-    
+
     gender_div = soup.find("div", class_="lead-page-info")
-    if gender_div and ("мужской род" in gender_div.text or "женский род" in gender_div.text):
+    if gender_div and (
+        "мужской род" in gender_div.text or "женский род" in gender_div.text
+    ):
         forms["gender"] = gender_div.text.strip()
 
     declension_table = soup.find("table", class_="table")
@@ -55,7 +57,7 @@ def _parse_noun_forms(soup: BeautifulSoup) -> Dict[str, Any]:
             forms["singular_form"] = form_value
         elif "мн. ч." in form_type:
             forms["plural_form"] = form_value
-            
+
     return forms
 
 
@@ -83,7 +85,7 @@ def _parse_adjective_forms(soup: BeautifulSoup) -> Dict[str, Any]:
             forms["masculine_plural"] = form_value
         elif "ж.р., мн.ч." in form_type:
             forms["feminine_plural"] = form_value
-            
+
     return forms
 
 
@@ -199,9 +201,11 @@ def parse_noun_or_adjective_page(
             data["is_verb"] = False
         else:
             data["part_of_speech"] = None
-            data["is_verb"] = False # Default for non-verbs
+            data["is_verb"] = False  # Default for non-verbs
 
-        logger.info(f"--> parse_noun_or_adjective_page: Часть речи определена как {data['part_of_speech']}.")
+        logger.info(
+            f"--> parse_noun_or_adjective_page: Часть речи определена как {data['part_of_speech']}."
+        )
 
         logger.info("--> parse_noun_or_adjective_page: Поиск канонической формы...")
         canonical_hebrew = None
@@ -394,7 +398,7 @@ async def fetch_and_cache_word_data(
             logger.info(
                 f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его форм в БД..."
             )
-            
+
             # Собираем все данные для сохранения
             # The `is_verb` field is now correctly populated by the parsing functions
             word_to_create = {

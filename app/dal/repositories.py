@@ -125,21 +125,21 @@ class WordRepository(BaseRepository):
 
         # Combine all word data into a single dictionary
         word_data = {
-            'hebrew': hebrew,
-            'normalized_hebrew': normalized_hebrew,
-            'transcription': transcription,
-            'part_of_speech': part_of_speech,
-            'root': root,
-            'binyan': binyan,
-            'fetched_at': datetime.now(),
-            **kwargs, # This will catch new fields like 'gender', 'singular_form', etc.
+            "hebrew": hebrew,
+            "normalized_hebrew": normalized_hebrew,
+            "transcription": transcription,
+            "part_of_speech": part_of_speech,
+            "root": root,
+            "binyan": binyan,
+            "fetched_at": datetime.now(),
+            **kwargs,  # This will catch new fields like 'gender', 'singular_form', etc.
         }
 
         # Dynamically build the INSERT query
-        columns = ', '.join(word_data.keys())
-        placeholders = ', '.join(['?'] * len(word_data))
+        columns = ", ".join(word_data.keys())
+        placeholders = ", ".join(["?"] * len(word_data))
         word_query = f"INSERT INTO cached_words ({columns}) VALUES ({placeholders})"
-        
+
         cursor.execute(word_query, list(word_data.values()))
         word_id = cursor.lastrowid
         if not word_id:
@@ -218,7 +218,7 @@ class UserDictionaryRepository(BaseRepository):
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, limit, offset))
         word_data_rows = cursor.fetchall()
-        
+
         # Convert rows to CachedWord models
         words = self._rows_to_models(word_data_rows, CachedWord)
 
