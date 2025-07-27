@@ -92,7 +92,7 @@ async def start_flashcard_training(
         return TRAINING_MENU_STATE
 
     context.user_data.update(
-        {"words": [dict(w) for w in words], "idx": 0, "correct": 0}
+        {"words": words, "idx": 0, "correct": 0}
     )
     return await show_next_card(update, context)
 
@@ -130,9 +130,9 @@ async def show_next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     word = words[idx]
     question = (
-        word["hebrew"]
+        word.hebrew
         if context.user_data["training_mode"] == CB_TRAIN_HE_RU
-        else word["translation_text"]
+        else word.translations[0].translation_text
     )
     keyboard = [
         [InlineKeyboardButton("💡 Показать ответ", callback_data=CB_SHOW_ANSWER)],
@@ -156,7 +156,7 @@ async def show_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await query.answer()
 
     word = context.user_data["words"][context.user_data["idx"]]
-    answer_text = f"*{word['hebrew']}* [{word['transcription']}]\n\nПеревод: *{word['translation_text']}*"
+    answer_text = f"*{word.hebrew}* [{word.transcription}]\n\nПеревод: *{word.translations[0].translation_text}*"
     keyboard = [
         [InlineKeyboardButton("✅ Знаю", callback_data=CB_EVAL_CORRECT)],
         [InlineKeyboardButton("❌ Не знаю", callback_data=CB_EVAL_INCORRECT)],
@@ -177,10 +177,10 @@ async def handle_self_evaluation(
     word = context.user_data["words"][context.user_data["idx"]]
 
     with UnitOfWork() as uow:
-        srs_data = uow.user_dictionary.get_srs_level(
-            query.from_user.id, word["word_id"]
+        srs_level = uow.user_dictionary.get_srs_level(
+            query.from_user.id, word.word_id
         )
-        srs_level = srs_data["srs_level"] if srs_data else 0
+        srs_level = srs_level if srs_level is not None else 0
 
         if query.data == CB_EVAL_CORRECT:
             context.user_data["correct"] += 1
@@ -193,7 +193,7 @@ async def handle_self_evaluation(
         next_review_date = datetime.now() + timedelta(days=days_to_add)
 
         uow.user_dictionary.update_srs_level(
-            srs_level, next_review_date, query.from_user.id, word["word_id"]
+            srs_level, next_review_date, query.from_user.id, word.word_id
         )
         uow.commit()
 
@@ -225,14 +225,14 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 return TRAINING_MENU_STATE
 
             conjugation_candidate = uow.words.get_random_conjugation_for_word(
-                verb_candidate["word_id"]
+                verb_candidate.word_id
             )
             if conjugation_candidate:
                 verb, conjugation = verb_candidate, conjugation_candidate
                 break
             else:
                 logger.warning(
-                    f"Ошибка целостности данных: у глагола {verb_candidate['hebrew']} (id: {verb_candidate['word_id']}) нет спряжений. Попытка {i + 1}/{VERB_TRAINER_RETRY_ATTEMPTS}"
+                    f"Ошибка целостности данных: у глагола {verb_candidate.hebrew} (id: {verb_candidate.word_id}) нет спряжений. Попытка {i + 1}/{VERB_TRAINER_RETRY_ATTEMPTS}"
                 )
 
     if not verb or not conjugation:
@@ -244,9 +244,9 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return TRAINING_MENU_STATE
 
-    context.user_data["answer"] = dict(conjugation)
+    context.user_data["answer"] = conjugation
 
-    question_text = f"Глагол: *{verb['hebrew']}*\n\nНапишите его форму для:\n*{conjugation['tense']}, {conjugation['person']}*"
+    question_text = f"Глагол: *{verb.hebrew}*\n\nНапишите его форму для:\n*{conjugation.tense}, {conjugation.person}*"
     await query.edit_message_text(question_text, parse_mode=ParseMode.MARKDOWN)
 
     return AWAITING_VERB_ANSWER
@@ -259,19 +259,19 @@ async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return await training_menu(update, context)
 
     user_answer_normalized = normalize_hebrew(update.message.text)
-    correct_answer_normalized = normalize_hebrew(correct_answer["hebrew_form"])
+    correct_answer_normalized = normalize_hebrew(correct_answer.hebrew_form)
 
     if user_answer_normalized == correct_answer_normalized:
-        reply_text = f"✅ Верно!\n\n*{correct_answer['hebrew_form']}* [{correct_answer['transcription']}]"
+        reply_text = f"✅ Верно!\n\n*{correct_answer.hebrew_form}* [{correct_answer.transcription}]"
     else:
-        reply_text = f"❌ Ошибка.\n\nПравильный ответ: *{correct_answer['hebrew_form']}* [{correct_answer['transcription']}]"
+        reply_text = f"❌ Ошибка.\n\nПравильный ответ: *{correct_answer.hebrew_form}* [{correct_answer.transcription}]"
 
     with UnitOfWork() as uow:
         uow.user_dictionary.update_srs_level(
             0,
             datetime.now() + timedelta(days=1),
             update.effective_user.id,
-            correct_answer["word_id"],
+            correct_answer.word_id,
         )
         uow.commit()
 

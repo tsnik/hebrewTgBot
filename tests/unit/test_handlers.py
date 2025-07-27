@@ -488,7 +488,7 @@ async def test_start_flashcard_training_with_words():
         ) as mock_show_next:
             await start_flashcard_training(update, context)
 
-            assert context.user_data["words"][0]["hebrew"] == mock_words[0].hebrew
+            assert context.user_data["words"][0].hebrew == mock_words[0].hebrew
             assert context.user_data["training_mode"] == "train:he_ru"
             mock_show_next.assert_called_once()
 
@@ -526,7 +526,7 @@ async def test_handle_self_evaluation_logic(evaluation, expected_srs):
     update.callback_query.data = evaluation  # Now uses the constant
     update.callback_query.from_user.id = 123
     context = MagicMock()
-    context.user_data = {"words": [{"word_id": 1}], "idx": 0, "correct": 0}
+    context.user_data = {"words": [MagicMock(word_id=1)], "idx": 0, "correct": 0}
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
@@ -552,7 +552,7 @@ async def test_check_verb_answer_correct_and_incorrect():
     update_correct.effective_user.id = 123
     context_correct = MagicMock()
     context_correct.user_data = {
-        "answer": {"hebrew_form": "ילך", "transcription": "yelekh", "word_id": 5}
+        "answer": MagicMock(hebrew_form="ילך", transcription="yelekh", word_id=5)
     }
 
     with patch("handlers.training.UnitOfWork"):
@@ -567,7 +567,7 @@ async def test_check_verb_answer_correct_and_incorrect():
     update_incorrect.effective_user.id = 123
     context_incorrect = MagicMock()
     context_incorrect.user_data = {
-        "answer": {"hebrew_form": "ילך", "transcription": "yelekh", "word_id": 5}
+        "answer": MagicMock(hebrew_form="ילך", transcription="yelekh", word_id=5)
     }
 
     with patch("handlers.training.UnitOfWork"):
@@ -620,12 +620,12 @@ async def test_start_verb_trainer_happy_path():
     context = MagicMock()
     context.user_data = {}
 
-    mock_verb = {"word_id": 10, "hebrew": "לכתוב"}
-    mock_conjugation = {
-        "tense": "FUTURE",
-        "person": "1st plural",
-        "hebrew_form": "נכתוב",
-    }
+    mock_verb = MagicMock(word_id=10, hebrew="לכתוב")
+    mock_conjugation = MagicMock(
+        tense="FUTURE",
+        person="1st plural",
+        hebrew_form="נכתוב",
+    )
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
@@ -656,13 +656,13 @@ async def test_start_verb_trainer_retry_logic():
     context = MagicMock()
     context.user_data = {}
 
-    mock_verb_no_conj = {"word_id": 11, "hebrew": "פועל_בלי_כלום"}
-    mock_verb_with_conj = {"word_id": 12, "hebrew": "לרוץ"}
-    mock_conjugation = {
-        "tense": "PRESENT",
-        "person": "m. plural",
-        "hebrew_form": "רצים",
-    }
+    mock_verb_no_conj = MagicMock(word_id=11, hebrew="פועל_בלי_כלום")
+    mock_verb_with_conj = MagicMock(word_id=12, hebrew="לרוץ")
+    mock_conjugation = MagicMock(
+        tense="PRESENT",
+        person="m. plural",
+        hebrew_form="רצים",
+    )
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
@@ -700,7 +700,7 @@ async def test_start_verb_trainer_fails_after_retries():
     update.callback_query.from_user.id = 123
     context = MagicMock()
 
-    mock_verb = {"word_id": 11, "hebrew": "פועל_בלי_כלום"}
+    mock_verb = MagicMock(word_id=11, hebrew="פועל_בלי_כלום")
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
