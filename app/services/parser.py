@@ -135,6 +135,12 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
     Асинхронная функция-диспетчер парсинга. Нормализует, ищет, парсит и сохраняет данные.
     """
     normalized_search_word = normalize_hebrew(search_word)
+
+    with UnitOfWork() as uow:
+        result = uow.words.find_word_by_normalized_form(normalized_search_word)
+        if result:
+            return 'ok', result.model_dump()
+
     async with PARSING_EVENTS_LOCK:
         if normalized_search_word not in PARSING_EVENTS:
             PARSING_EVENTS[normalized_search_word] = asyncio.Event()
@@ -150,7 +156,9 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, Optional[Dic
             logger.info(f"Ожидание для '{search_word}' завершено, повторный поиск в кэше.")
             with UnitOfWork() as uow:
                 result = uow.words.find_word_by_normalized_form(normalized_search_word)
-            return ('ok', result.dict() if result else None)
+            if result:
+                return 'ok', result.model_dump()
+            return 'not_found', None
         except asyncio.TimeoutError:
             logger.warning(f"Таймаут ожидания для '{search_word}'.")
             return 'error', None
