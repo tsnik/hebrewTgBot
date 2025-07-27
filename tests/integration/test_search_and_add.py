@@ -1,6 +1,8 @@
 # tests/integration/test_search_add_integration.py
 import pytest
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch, PropertyMock
+import unicodedata
 
 # Импортируем хендлеры и константы из приложения
 from handlers.search import handle_text_message, add_word_to_dictionary
@@ -13,21 +15,26 @@ TEST_CHAT_ID = 987654321
 
 # Мок HTML-ответа от pealim.com для слова "בדיקה"
 # Он содержит минимально необходимую структуру для успешного парсинга
-MOCK_PEALIM_HTML = """
-<html>
-<head><title>בדיקה – pealim.com</title></head>
-<body>
-    <h2 class="page-header">בדיקה</h2>
-    <div class="transcription">bdika</div>
-    <div class="lead">проверка, тест; анализ</div>
-</body>
-</html>
-"""
+
+
+@pytest.fixture(scope="module")
+def fixtures_path() -> Path:
+    """Возвращает путь к папке с фикстурами."""
+    return Path(__file__).parent.parent / "fixtures"
+
+
+@pytest.fixture(scope="module")
+def MOCK_PEALIM_HTML(fixtures_path: Path) -> str:
+    """Фикстура для прилагательного (chamud)."""
+    with open(fixtures_path / "2811-bdika.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 
 @pytest.mark.asyncio
 @patch("services.parser.httpx.AsyncClient")  # Патчим HTTP-клиент в модуле парсера
-async def test_full_search_and_add_scenario(mock_async_client, mock_context):
+async def test_full_search_and_add_scenario(
+    mock_async_client, mock_context, MOCK_PEALIM_HTML
+):
     """
     Полный интеграционный тест сценария:
     1. Пользователь ищет слово, которого нет в кэше.
@@ -87,7 +94,7 @@ async def test_full_search_and_add_scenario(mock_async_client, mock_context):
         word_data = call_kwargs["word_data"]
 
         # Проверяем наличие кнопки "Добавить"
-        assert word_data["hebrew"] == "בדיקה"
+        assert word_data["hebrew"] == unicodedata.normalize("NFD", "בְּדִיקָה")
 
     with UnitOfWork() as uow:
         word = uow.words.find_word_by_normalized_form("בדיקה")

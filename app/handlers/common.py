@@ -60,7 +60,7 @@ async def display_word_card(
     передан message_id, иначе отправляет новое.
     """
     logger.info(f"-> display_word_card: Получены данные для карточки: {word_data}")
-    
+
     word_id = word_data["word_id"]
 
     if in_dictionary is None:
@@ -88,31 +88,33 @@ async def display_word_card(
     card_text = f"{card_text_header} [{word_data.get('transcription', '')}]\nПеревод: {translation_str}\n"
 
     # --- НОВАЯ ЛОГИКА ОТОБРАЖЕНИЯ ДАННЫХ ---
-    pos = word_data.get('part_of_speech')
-    if pos == 'verb':
-        if word_data.get('root'):
+    pos = word_data.get("part_of_speech")
+    if pos == "verb":
+        if word_data.get("root"):
             card_text += f"\nКорень: {word_data['root']}"
-        if word_data.get('binyan'):
+        if word_data.get("binyan"):
             card_text += f"\nБиньян: {word_data['binyan']}"
-    elif pos == 'noun':
-        if word_data.get('gender'):
-            gender_display = "Мужской род" if word_data['gender'] == 'masculine' else "Женский род"
+    elif pos == "noun":
+        if word_data.get("gender"):
+            gender_display = (
+                "Мужской род" if word_data["gender"] == "masculine" else "Женский род"
+            )
             card_text += f"\nРод: {gender_display}"
-        if word_data.get('singular_form'):
+        if word_data.get("singular_form"):
             card_text += f"\nЕд. число: {word_data['singular_form']}"
-        if word_data.get('plural_form'):
+        if word_data.get("plural_form"):
             card_text += f"\nМн. число: {word_data['plural_form']}"
-    elif pos == 'adjective':
+    elif pos == "adjective":
         card_text += "\n*Формы:*"
-        if word_data.get('masculine_singular'):
+        if word_data.get("masculine_singular"):
             card_text += f"\nм.р., ед.ч.: {word_data['masculine_singular']}"
-        if word_data.get('feminine_singular'):
+        if word_data.get("feminine_singular"):
             card_text += f"\nж.р., ед.ч.: {word_data['feminine_singular']}"
-        if word_data.get('masculine_plural'):
+        if word_data.get("masculine_plural"):
             card_text += f"\nм.р., мн.ч.: {word_data['masculine_plural']}"
-        if word_data.get('feminine_plural'):
+        if word_data.get("feminine_plural"):
             card_text += f"\nж.р., мн.ч.: {word_data['feminine_plural']}"
-    
+
     card_text = card_text.strip()
     # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
 

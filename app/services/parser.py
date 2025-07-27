@@ -41,7 +41,7 @@ def _extract_hebrew_from_cell(cell: Tag) -> Optional[str]:
     # Убираем альтернативные написания типа "~ ..."
     hebrew_text = menukad.text.split("~")[0].strip()
     # Нормализуем строку в NFD для консистентного сравнения
-    return unicodedata.normalize('NFD', hebrew_text)
+    return unicodedata.normalize("NFD", hebrew_text)
 
 
 def _get_part_of_speech_from_meta(soup: BeautifulSoup) -> Optional[str]:
@@ -128,7 +128,7 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
 
         logger.info("--> parse_verb_page: Поиск инфинитива...")
         infinitive_div = soup.find("div", id="INF-L")
-        
+
         if not infinitive_div:
             logger.error("--> parse_verb_page: Не найден блок инфинитива.")
             return None
@@ -139,9 +139,9 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
                 "--> parse_verb_page: Не найден тег menukad внутри блока инфинитива."
             )
             return None
-        
+
         hebrew_text = menukad_tag.text.split("~")[0].strip()
-        data["hebrew"] = unicodedata.normalize('NFD', hebrew_text)
+        data["hebrew"] = unicodedata.normalize("NFD", hebrew_text)
         logger.info(f"--> parse_verb_page: Инфинитив найден: {data['hebrew']}")
 
         logger.info("--> parse_verb_page: Поиск перевода...")
@@ -170,7 +170,9 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
         for p in main_header.parent.find_all("p"):
             text_lower = p.text.lower()
             if "глагол" in text_lower:
-                binyan_text = p.text.replace("Verb –", "").replace("Глагол –", "").strip()
+                binyan_text = (
+                    p.text.replace("Verb –", "").replace("Глагол –", "").strip()
+                )
                 data["binyan"] = binyan_text.split()[0] if binyan_text else None
 
             if "root" in text_lower or "корень" in text_lower:
@@ -225,7 +227,7 @@ def parse_noun_or_adjective_page(
     Ищет каноническую форму непосредственно в таблице склонения.
     """
     part_of_speech = _get_part_of_speech_from_meta(soup)
-    if not part_of_speech or part_of_speech == 'verb':
+    if not part_of_speech or part_of_speech == "verb":
         logger.error(f"Неверный тип страницы для этого парсера: {part_of_speech}")
         return None
 
@@ -260,9 +262,11 @@ def parse_noun_or_adjective_page(
                     canonical_hebrew = _extract_hebrew_from_cell(data_cell)
 
         if not canonical_hebrew:
-            logger.error("--> Не удалось найти каноническую форму в таблице. Парсинг прерван.")
+            logger.error(
+                "--> Не удалось найти каноническую форму в таблице. Парсинг прерван."
+            )
             return None
-        
+
         data["hebrew"] = canonical_hebrew
         logger.info(f"--> Каноническая форма из таблицы найдена: {data['hebrew']}")
 
@@ -348,40 +352,32 @@ async def fetch_and_cache_word_data(
             logger.info("Шаг 1: Выполнение HTTP-запроса...")
             try:
                 # Сначала ищем в русской версии, если нет - в английской
-                search_url_ru = f"https://www.pealim.com/ru/search/?q={quote(search_word)}"
+                search_url_ru = (
+                    f"https://www.pealim.com/ru/search/?q={quote(search_word)}"
+                )
                 response = await client.get(search_url_ru, timeout=10)
                 response.raise_for_status()
-                
+
                 # Если после поиска мы не на странице словаря, ищем ссылку
                 if "/dict/" not in str(response.url):
                     search_soup = BeautifulSoup(response.text, "html.parser")
-                    results_container = search_soup.find("div", class_="results-by-verb") or search_soup.find("div", class_="results-by-meaning")
+                    results_container = search_soup.find(
+                        "div", class_="results-by-verb"
+                    ) or search_soup.find("div", class_="results-by-meaning")
                     if results_container:
-                        result_link = results_container.find("a", href=re.compile(r"/dict/"))
+                        result_link = results_container.find(
+                            "a", href=re.compile(r"/dict/")
+                        )
                         if result_link and result_link.get("href"):
                             final_url = urljoin(str(response.url), result_link["href"])
                             response = await client.get(final_url, timeout=10)
                             response.raise_for_status()
 
-                # Если русская версия не дала результата, пробуем английскую
                 if "/dict/" not in str(response.url):
-                    logger.info("Русская версия не дала результата, пробую английскую...")
-                    search_url_en = f"https://www.pealim.com/search/?q={quote(search_word)}"
-                    response = await client.get(search_url_en, timeout=10)
-                    response.raise_for_status()
-                    if "/dict/" not in str(response.url):
-                        search_soup = BeautifulSoup(response.text, "html.parser")
-                        results_container = search_soup.find("div", class_="results-by-verb") or search_soup.find("div", class_="results-by-meaning")
-                        if results_container:
-                            result_link = results_container.find("a", href=re.compile(r"/dict/"))
-                            if result_link and result_link.get("href"):
-                                final_url = urljoin(str(response.url), result_link["href"])
-                                response = await client.get(final_url, timeout=10)
-                                response.raise_for_status()
-
-                if "/dict/" not in str(response.url):
-                     logger.warning(f"Не найдено результатов ни в русской, ни в английской версии для '{search_word}'.")
-                     return "not_found", None
+                    logger.warning(
+                        f"Не найдено результатов ни в русской, ни в английской версии для '{search_word}'."
+                    )
+                    return "not_found", None
 
             except httpx.RequestError as e:
                 logger.error(
@@ -401,12 +397,21 @@ async def fetch_and_cache_word_data(
         parsed_data = None
         # Используем мета-тег как основной источник, но оставляем проверку заголовка как запасной вариант
         part_of_speech = _get_part_of_speech_from_meta(soup)
-        
-        if part_of_speech == 'verb' or "спряжение" in main_header.text.lower() or "conjugation" in main_header.text.lower():
+
+        if (
+            part_of_speech == "verb"
+            or "спряжение" in main_header.text.lower()
+            or "conjugation" in main_header.text.lower()
+        ):
             logger.info("Шаг 2.1: Страница определена как ГЛАГОЛ.")
             parsed_data = parse_verb_page(soup, main_header)
-        elif part_of_speech in ['noun', 'adjective'] or "формы слова" in main_header.text.lower():
-            logger.info("Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ.")
+        elif (
+            part_of_speech in ["noun", "adjective"]
+            or "формы слова" in main_header.text.lower()
+        ):
+            logger.info(
+                "Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ."
+            )
             parsed_data = parse_noun_or_adjective_page(soup, main_header)
         else:
             logger.error(f"Не удалось определить тип страницы для: {main_header.text}")
