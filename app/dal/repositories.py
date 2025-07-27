@@ -224,9 +224,7 @@ class UserDictionaryRepository(BaseRepository):
         result = cursor.fetchone()
         return result is not None
 
-    def get_user_words_for_training(
-        self, user_id: int, limit: int
-    ) -> List[CachedWord]:
+    def get_user_words_for_training(self, user_id: int, limit: int) -> List[CachedWord]:
         query = """
             SELECT cw.*
             FROM cached_words cw

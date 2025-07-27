@@ -91,9 +91,7 @@ async def start_flashcard_training(
         )
         return TRAINING_MENU_STATE
 
-    context.user_data.update(
-        {"words": words, "idx": 0, "correct": 0}
-    )
+    context.user_data.update({"words": words, "idx": 0, "correct": 0})
     return await show_next_card(update, context)
 
 
@@ -177,9 +175,7 @@ async def handle_self_evaluation(
     word = context.user_data["words"][context.user_data["idx"]]
 
     with UnitOfWork() as uow:
-        srs_level = uow.user_dictionary.get_srs_level(
-            query.from_user.id, word.word_id
-        )
+        srs_level = uow.user_dictionary.get_srs_level(query.from_user.id, word.word_id)
         srs_level = srs_level if srs_level is not None else 0
 
         if query.data == CB_EVAL_CORRECT:

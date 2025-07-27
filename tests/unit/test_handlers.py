@@ -82,8 +82,36 @@ async def test_view_dictionary_page_handler_with_words():
     with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.user_dictionary.get_dictionary_page.return_value = [
-                CachedWord(word_id=1, hebrew="שלום", normalized_hebrew="שלום", is_verb=False, fetched_at=datetime.now(), translations=[Translation(translation_id=1, word_id=1, translation_text="привет", is_primary=True)]),
-                CachedWord(word_id=2, hebrew="כלב", normalized_hebrew="כלב", is_verb=False, fetched_at=datetime.now(), translations=[Translation(translation_id=2, word_id=2, translation_text="собака", is_primary=True)]),
+            CachedWord(
+                word_id=1,
+                hebrew="שלום",
+                normalized_hebrew="שלום",
+                is_verb=False,
+                fetched_at=datetime.now(),
+                translations=[
+                    Translation(
+                        translation_id=1,
+                        word_id=1,
+                        translation_text="привет",
+                        is_primary=True,
+                    )
+                ],
+            ),
+            CachedWord(
+                word_id=2,
+                hebrew="כלב",
+                normalized_hebrew="כלב",
+                is_verb=False,
+                fetched_at=datetime.now(),
+                translations=[
+                    Translation(
+                        translation_id=2,
+                        word_id=2,
+                        translation_text="собака",
+                        is_primary=True,
+                    )
+                ],
+            ),
         ]
 
         await view_dictionary_page_handler(update, context)
@@ -132,21 +160,21 @@ async def test_delete_word_flow():
     with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.user_dictionary.get_dictionary_page.return_value = [
-                CachedWord(
-                    word_id=word_id_to_delete,
-                    hebrew="שלום",
-                    normalized_hebrew="שלום",
-                    is_verb=False,
-                    fetched_at=datetime.now(),
-                    translations=[
-                        Translation(
-                            translation_id=1,
-                            word_id=word_id_to_delete,
-                            translation_text="hello",
-                            is_primary=True,
-                        )
-                    ],
-                )
+            CachedWord(
+                word_id=word_id_to_delete,
+                hebrew="שלום",
+                normalized_hebrew="שלום",
+                is_verb=False,
+                fetched_at=datetime.now(),
+                translations=[
+                    Translation(
+                        translation_id=1,
+                        word_id=word_id_to_delete,
+                        translation_text="hello",
+                        is_primary=True,
+                    )
+                ],
+            )
         ]
         await view_dictionary_page_handler(update, context)
 
@@ -474,7 +502,23 @@ async def test_start_flashcard_training_with_words():
     context = MagicMock()
     context.user_data = {}
 
-    mock_words = [CachedWord(word_id=1, hebrew="שלום", normalized_hebrew="שלום", is_verb=False, fetched_at=datetime.now(), translations=[Translation(translation_id=1, word_id=1, translation_text="привет", is_primary=True)])]
+    mock_words = [
+        CachedWord(
+            word_id=1,
+            hebrew="שלום",
+            normalized_hebrew="שלום",
+            is_verb=False,
+            fetched_at=datetime.now(),
+            translations=[
+                Translation(
+                    translation_id=1,
+                    word_id=1,
+                    translation_text="привет",
+                    is_primary=True,
+                )
+            ],
+        )
+    ]
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
