@@ -10,13 +10,10 @@ from dal.models import CachedWord, Translation, VerbConjugation
 class BaseRepository:
     def __init__(self, connection: sqlite3.Connection):
         self.connection = connection
-        # It's a good practice to set row_factory for dict-like access
         self.connection.row_factory = sqlite3.Row
 
     def _row_to_model(self, row: sqlite3.Row, model_class):
-        # *** ADAPTED FOR STABILITY ***
-        # Explicitly convert the sqlite3.Row object to a dictionary before unpacking.
-        # This is more robust and avoids potential issues with the mapping protocol.
+        # Explicitly convert sqlite3.Row to dict for robust Pydantic model creation
         return model_class(**dict(row)) if row else None
 
     def _rows_to_models(self, rows: List[sqlite3.Row], model_class):
@@ -33,6 +30,8 @@ class WordRepository(BaseRepository):
             return None
 
         word = self._row_to_model(word_data, CachedWord)
+        if not word:
+            return None
         word.translations = self.get_translations_for_word(word_id)
         word.conjugations = self.get_conjugations_for_word(word_id)
         return word
@@ -51,9 +50,8 @@ class WordRepository(BaseRepository):
         conjugations_data = cursor.fetchall()
         return self._rows_to_models(conjugations_data, VerbConjugation)
 
-    def get_random_verb_for_training(self, user_id: int) -> Optional[Dict[str, Any]]:
+    def get_random_verb_for_training(self, user_id: int) -> Optional[CachedWord]:
         # *** ADAPTED FOR NEW MODEL ***
-        # Changed `is_verb = 1` to `part_of_speech = 'verb'`
         query = """
             SELECT cw.*
             FROM cached_words cw
@@ -64,13 +62,17 @@ class WordRepository(BaseRepository):
         """
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id,))
-        return cursor.fetchone()
+        word_data = cursor.fetchone()
+        return self._row_to_model(word_data, CachedWord)
 
-    def get_random_conjugation_for_word(self, word_id: int) -> Optional[Dict[str, Any]]:
+    def get_random_conjugation_for_word(
+        self, word_id: int
+    ) -> Optional[VerbConjugation]:
         query = "SELECT * FROM verb_conjugations WHERE word_id = ? ORDER BY RANDOM() LIMIT 1"
         cursor = self.connection.cursor()
         cursor.execute(query, (word_id,))
-        return cursor.fetchone()
+        conjugation_data = cursor.fetchone()
+        return self._row_to_model(conjugation_data, VerbConjugation)
 
     def find_word_by_normalized_form(
         self, normalized_word: str
@@ -109,8 +111,6 @@ class WordRepository(BaseRepository):
         hebrew: str,
         normalized_hebrew: str,
         transcription: Optional[str],
-        # *** ADAPTED FOR BACKWARD COMPATIBILITY ***
-        # The parameter is named `is_verb` to match the old signature and test calls.
         is_verb: bool,
         root: Optional[str],
         binyan: Optional[str],
@@ -120,10 +120,8 @@ class WordRepository(BaseRepository):
     ) -> int:
         cursor = self.connection.cursor()
 
-        # Convert `is_verb` to `part_of_speech` for the new schema
-        part_of_speech = "verb" if is_verb else None
+        part_of_speech = "verb" if is_verb else kwargs.get("part_of_speech")
 
-        # Combine all word data into a single dictionary
         word_data = {
             "hebrew": hebrew,
             "normalized_hebrew": normalized_hebrew,
@@ -132,10 +130,12 @@ class WordRepository(BaseRepository):
             "root": root,
             "binyan": binyan,
             "fetched_at": datetime.now(),
-            **kwargs,  # This will catch new fields like 'gender', 'singular_form', etc.
+            **kwargs,
         }
 
-        # Dynamically build the INSERT query
+        # Remove is_verb if it exists in kwargs to avoid column error
+        word_data.pop("is_verb", None)
+
         columns = ", ".join(word_data.keys())
         placeholders = ", ".join(["?"] * len(word_data))
         word_query = f"INSERT INTO cached_words ({columns}) VALUES ({placeholders})"
@@ -155,10 +155,7 @@ class WordRepository(BaseRepository):
                 )
                 for t in translations
             ]
-            translations_query = """
-                INSERT INTO translations (word_id, translation_text, context_comment, is_primary)
-                VALUES (?, ?, ?, ?)
-            """
+            translations_query = "INSERT INTO translations (word_id, translation_text, context_comment, is_primary) VALUES (?, ?, ?, ?)"
             cursor.executemany(translations_query, translations_to_insert)
 
         if conjugations:
@@ -173,11 +170,7 @@ class WordRepository(BaseRepository):
                 )
                 for c in conjugations
             ]
-            conjugations_query = """
-                INSERT INTO verb_conjugations
-                (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """
+            conjugations_query = "INSERT INTO verb_conjugations (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription) VALUES (?, ?, ?, ?, ?, ?)"
             cursor.executemany(conjugations_query, conjugations_to_insert)
 
         return word_id
@@ -202,9 +195,6 @@ class UserDictionaryRepository(BaseRepository):
     def get_dictionary_page(
         self, user_id: int, page: int, page_size: int
     ) -> List[CachedWord]:
-        # *** CORRECTED IMPLEMENTATION ***
-        # This method now returns a list of fully formed CachedWord objects,
-        # which is consistent with the rest of the repository and expected by tests.
         limit = page_size + 1
         offset = page * page_size
         query = """
@@ -218,16 +208,10 @@ class UserDictionaryRepository(BaseRepository):
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, limit, offset))
         word_data_rows = cursor.fetchall()
-
-        # Convert rows to CachedWord models
         words = self._rows_to_models(word_data_rows, CachedWord)
-
-        # For each word, fetch its translations to complete the object
         word_repo = WordRepository(self.connection)
         for word in words:
             word.translations = word_repo.get_translations_for_word(word.word_id)
-            word.conjugations = word_repo.get_conjugations_for_word(word.word_id)
-
         return words
 
     def is_word_in_dictionary(self, user_id: int, word_id: int) -> bool:
@@ -237,31 +221,33 @@ class UserDictionaryRepository(BaseRepository):
         result = cursor.fetchone()
         return result is not None
 
-    def get_user_words_for_training(
-        self, user_id: int, limit: int
-    ) -> List[Dict[str, Any]]:
+    def get_user_words_for_training(self, user_id: int, limit: int) -> List[CachedWord]:
         # *** ADAPTED FOR NEW MODEL ***
-        # Changed `is_verb = 0` to `part_of_speech != 'verb'`
         query = """
-            SELECT cw.*, t.translation_text
+            SELECT cw.*
             FROM cached_words cw
             JOIN user_dictionary ud ON cw.word_id = ud.word_id
-            JOIN translations t ON cw.word_id = t.word_id
-            WHERE ud.user_id = ? AND (cw.part_of_speech != 'verb' OR cw.part_of_speech IS NULL) AND t.is_primary = 1
+            WHERE ud.user_id = ? AND (cw.part_of_speech != 'verb' OR cw.part_of_speech IS NULL)
             ORDER BY ud.next_review_at ASC
             LIMIT ?
         """
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, limit))
-        return cursor.fetchall()
+        word_data_rows = cursor.fetchall()
+        words = self._rows_to_models(word_data_rows, CachedWord)
+        word_repo = WordRepository(self.connection)
+        for word in words:
+            word.translations = word_repo.get_translations_for_word(word.word_id)
+        return words
 
-    def get_srs_level(self, user_id: int, word_id: int) -> Optional[Dict[str, Any]]:
+    def get_srs_level(self, user_id: int, word_id: int) -> Optional[int]:
         query = (
             "SELECT srs_level FROM user_dictionary WHERE user_id = ? AND word_id = ?"
         )
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, word_id))
-        return cursor.fetchone()
+        result = cursor.fetchone()
+        return result["srs_level"] if result else None
 
     def update_srs_level(
         self, srs_level: int, next_review_at: datetime, user_id: int, word_id: int
