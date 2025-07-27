@@ -82,8 +82,8 @@ async def test_view_dictionary_page_handler_with_words():
     with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.user_dictionary.get_dictionary_page.return_value = [
-            {"word_id": 1, "hebrew": "שלום", "translation_text": "привет"},
-            {"word_id": 2, "hebrew": "כלב", "translation_text": "собака"},
+                CachedWord(word_id=1, hebrew="שלום", normalized_hebrew="שלום", is_verb=False, fetched_at=datetime.now(), translations=[Translation(translation_id=1, word_id=1, translation_text="привет", is_primary=True)]),
+                CachedWord(word_id=2, hebrew="כלב", normalized_hebrew="כלב", is_verb=False, fetched_at=datetime.now(), translations=[Translation(translation_id=2, word_id=2, translation_text="собака", is_primary=True)]),
         ]
 
         await view_dictionary_page_handler(update, context)
@@ -132,11 +132,21 @@ async def test_delete_word_flow():
     with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.user_dictionary.get_dictionary_page.return_value = [
-            {
-                "word_id": word_id_to_delete,
-                "hebrew": "שלום",
-                "translation_text": "hello",
-            }
+                CachedWord(
+                    word_id=word_id_to_delete,
+                    hebrew="שלום",
+                    normalized_hebrew="שלום",
+                    is_verb=False,
+                    fetched_at=datetime.now(),
+                    translations=[
+                        Translation(
+                            translation_id=1,
+                            word_id=word_id_to_delete,
+                            translation_text="hello",
+                            is_primary=True,
+                        )
+                    ],
+                )
         ]
         await view_dictionary_page_handler(update, context)
 
@@ -464,7 +474,7 @@ async def test_start_flashcard_training_with_words():
     context = MagicMock()
     context.user_data = {}
 
-    mock_words = [{"word_id": 1, "hebrew": "שלום", "translation_text": "привет"}]
+    mock_words = [CachedWord(word_id=1, hebrew="שלום", normalized_hebrew="שלום", is_verb=False, fetched_at=datetime.now(), translations=[Translation(translation_id=1, word_id=1, translation_text="привет", is_primary=True)])]
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
@@ -478,7 +488,7 @@ async def test_start_flashcard_training_with_words():
         ) as mock_show_next:
             await start_flashcard_training(update, context)
 
-            assert context.user_data["words"] == mock_words
+            assert context.user_data["words"][0]["hebrew"] == mock_words[0].hebrew
             assert context.user_data["training_mode"] == "train:he_ru"
             mock_show_next.assert_called_once()
 
@@ -521,7 +531,7 @@ async def test_handle_self_evaluation_logic(evaluation, expected_srs):
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         # The current SRS level is 0 before the evaluation
-        mock_uow_instance.user_dictionary.get_srs_level.return_value = {"srs_level": 0}
+        mock_uow_instance.user_dictionary.get_srs_level.return_value = 0
 
         with patch("handlers.training.show_next_card", new_callable=AsyncMock):
             await handle_self_evaluation(update, context)

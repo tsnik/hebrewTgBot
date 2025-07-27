@@ -4,7 +4,11 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 import sqlite3
 
-from dal.models import CachedWord, Translation, VerbConjugation
+from dal.models import (
+    CachedWord,
+    Translation,
+    VerbConjugation,
+)
 
 
 class BaseRepository:
@@ -28,6 +32,8 @@ class WordRepository(BaseRepository):
             return None
 
         word = self._row_to_model(word_data, CachedWord)
+        if not word:
+            return None
         word.translations = self.get_translations_for_word(word_id)
         word.conjugations = self.get_conjugations_for_word(word_id)
         return word
@@ -46,7 +52,7 @@ class WordRepository(BaseRepository):
         conjugations_data = cursor.fetchall()
         return self._rows_to_models(conjugations_data, VerbConjugation)
 
-    def get_random_verb_for_training(self, user_id: int) -> Optional[Dict[str, Any]]:
+    def get_random_verb_for_training(self, user_id: int) -> Optional[CachedWord]:
         query = """
             SELECT cw.*
             FROM cached_words cw
@@ -57,13 +63,17 @@ class WordRepository(BaseRepository):
         """
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id,))
-        return cursor.fetchone()
+        word_data = cursor.fetchone()
+        return self._row_to_model(word_data, CachedWord)
 
-    def get_random_conjugation_for_word(self, word_id: int) -> Optional[Dict[str, Any]]:
+    def get_random_conjugation_for_word(
+        self, word_id: int
+    ) -> Optional[VerbConjugation]:
         query = "SELECT * FROM verb_conjugations WHERE word_id = ? ORDER BY RANDOM() LIMIT 1"
         cursor = self.connection.cursor()
         cursor.execute(query, (word_id,))
-        return cursor.fetchone()
+        conjugation_data = cursor.fetchone()
+        return self._row_to_model(conjugation_data, VerbConjugation)
 
     def find_word_by_normalized_form(
         self, normalized_word: str
@@ -187,21 +197,25 @@ class UserDictionaryRepository(BaseRepository):
 
     def get_dictionary_page(
         self, user_id: int, page: int, page_size: int
-    ) -> List[Dict[str, Any]]:
+    ) -> List[CachedWord]:
         limit = page_size + 1
         offset = page * page_size
         query = """
-            SELECT cw.word_id, cw.hebrew, t.translation_text
+            SELECT cw.*
             FROM cached_words cw
             JOIN user_dictionary ud ON cw.word_id = ud.word_id
-            JOIN translations t ON cw.word_id = t.word_id
-            WHERE ud.user_id = ? AND t.is_primary = 1
+            WHERE ud.user_id = ?
             ORDER BY ud.added_at DESC
             LIMIT ? OFFSET ?
         """
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, limit, offset))
-        return cursor.fetchall()
+        word_data_rows = cursor.fetchall()
+        words = self._rows_to_models(word_data_rows, CachedWord)
+        word_repo = WordRepository(self.connection)
+        for word in words:
+            word.translations = word_repo.get_translations_for_word(word.word_id)
+        return words
 
     def is_word_in_dictionary(self, user_id: int, word_id: int) -> bool:
         query = "SELECT 1 FROM user_dictionary WHERE user_id = ? AND word_id = ?"
@@ -212,27 +226,32 @@ class UserDictionaryRepository(BaseRepository):
 
     def get_user_words_for_training(
         self, user_id: int, limit: int
-    ) -> List[Dict[str, Any]]:
+    ) -> List[CachedWord]:
         query = """
-            SELECT cw.*, t.translation_text
+            SELECT cw.*
             FROM cached_words cw
             JOIN user_dictionary ud ON cw.word_id = ud.word_id
-            JOIN translations t ON cw.word_id = t.word_id
-            WHERE ud.user_id = ? AND cw.is_verb = 0 AND t.is_primary = 1
+            WHERE ud.user_id = ? AND cw.is_verb = 0
             ORDER BY ud.next_review_at ASC
             LIMIT ?
         """
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, limit))
-        return cursor.fetchall()
+        word_data_rows = cursor.fetchall()
+        words = self._rows_to_models(word_data_rows, CachedWord)
+        word_repo = WordRepository(self.connection)
+        for word in words:
+            word.translations = word_repo.get_translations_for_word(word.word_id)
+        return words
 
-    def get_srs_level(self, user_id: int, word_id: int) -> Optional[Dict[str, Any]]:
+    def get_srs_level(self, user_id: int, word_id: int) -> Optional[int]:
         query = (
             "SELECT srs_level FROM user_dictionary WHERE user_id = ? AND word_id = ?"
         )
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, word_id))
-        return cursor.fetchone()
+        result = cursor.fetchone()
+        return result["srs_level"] if result else None
 
     def update_srs_level(
         self, srs_level: int, next_review_at: datetime, user_id: int, word_id: int

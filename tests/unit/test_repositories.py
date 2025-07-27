@@ -100,7 +100,7 @@ def test_user_dictionary_repository(memory_db):
     # Проверяем, что оно появилось на странице словаря
     page = user_repo.get_dictionary_page(user_id, 0, 10)
     assert len(page) == 1
-    assert page[0]["hebrew"] == "שֻׁלְחָן"
+    assert page[0].hebrew == "שֻׁלְחָן"
 
     # --- Фаза 3: Удаление и проверка ---
     # Удаляем слово

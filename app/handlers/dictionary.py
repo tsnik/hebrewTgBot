@@ -56,7 +56,7 @@ async def view_dictionary_page_logic(
 
     # Если мы только что удалили слово, убираем его из списка
     words = (
-        [w for w in words_from_db if w["word_id"] != exclude_word_id]
+            [w for w in words_from_db if w.word_id != exclude_word_id]
         if exclude_word_id
         else words_from_db
     )
@@ -87,17 +87,20 @@ async def view_dictionary_page_logic(
 
     # Формируем список слов или кнопки для удаления
     for word in words_on_page:
-        if deletion_mode:
-            keyboard.append(
-                [
-                    InlineKeyboardButton(
-                        f"🗑️ {word['hebrew']}",
-                        callback_data=f"{CB_DICT_CONFIRM_DELETE}:{word['word_id']}:{page}",
-                    )
-                ]
+            primary_translation = next(
+                (t.translation_text for t in word.translations if t.is_primary), ""
             )
-        else:
-            message_text += f"• {word['hebrew']} — {word['translation_text']}\n"
+            if deletion_mode:
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                                f"🗑️ {word.hebrew}",
+                                callback_data=f"{CB_DICT_CONFIRM_DELETE}:{word.word_id}:{page}",
+                        )
+                    ]
+                )
+            else:
+                message_text += f"• {word.hebrew} — {primary_translation}\n"
 
     # Навигационные кнопки
     nav_buttons = []
