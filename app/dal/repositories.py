@@ -75,24 +75,25 @@ class WordRepository(BaseRepository):
         return self._row_to_model(conjugation_data, VerbConjugation)
 
     def find_word_by_normalized_form(
-        self, normalized_word: str
+        self, normalized_word: str, only_normalized_form: Optional[bool] = False
     ) -> Optional[CachedWord]:
         cursor = self.connection.cursor()
         word_id = None
 
-        conjugation_query = (
-            "SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?"
-        )
-        cursor.execute(conjugation_query, (normalized_word,))
-        conjugation = cursor.fetchone()
-        if conjugation:
-            word_id = conjugation["word_id"]
-        else:
-            word_query = "SELECT word_id FROM cached_words WHERE normalized_hebrew = ?"
-            cursor.execute(word_query, (normalized_word,))
-            word_data_row = cursor.fetchone()
-            if word_data_row:
-                word_id = word_data_row["word_id"]
+        word_query = "SELECT word_id FROM cached_words WHERE normalized_hebrew = ?"
+        cursor.execute(word_query, (normalized_word,))
+        word_data_row = cursor.fetchone()
+        if word_data_row:
+            word_id = word_data_row["word_id"]
+
+        if word_id is None and not only_normalized_form:
+            conjugation_query = (
+                "SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?"
+            )
+            cursor.execute(conjugation_query, (normalized_word,))
+            conjugation = cursor.fetchone()
+            if conjugation:
+                word_id = conjugation["word_id"]
 
         if not word_id:
             return None

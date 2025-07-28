@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from config import CB_VIEW_CARD, CB_SEARCH_PEALIM, CB_SELECT_WORD
+from config import CB_VIEW_CARD, CB_SEARCH_PEALIM, CB_SELECT_WORD, logger
 from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card
@@ -113,33 +113,56 @@ async def search_in_pealim(
         )
         message_id = update.callback_query.message.message_id
 
-    status, data = await fetch_and_cache_word_data(query)
+    status, data_list = await fetch_and_cache_word_data(query)
 
-    if status == "ok" and data:
-        await display_word_card(
-            context,
-            user_id,
-            chat_id,
-            word_data=data,
-            message_id=message_id,
-        )
+    if status == "ok" and data_list:
+        if len(data_list) == 1:
+            await display_word_card(
+                context, user_id, chat_id, data_list[0], message_id=message_id
+            )
+        else:
+            message_text = (
+                "Во внешнем источнике найдено несколько вариантов. Выберите нужный:"
+            )
+            keyboard = []
+            for word in data_list:
+                primary_translation = word.get("translations", [{}])[0].get(
+                    "translation_text", ""
+                )
+                button_text = f"{word['hebrew']} - {primary_translation}"
+                keyboard.append(
+                    [
+                        InlineKeyboardButton(
+                            button_text,
+                            # Важно! Используем word_id, который был присвоен при сохранении в БД
+                            callback_data=f"{CB_SELECT_WORD}:{word['word_id']}:{query}",
+                        )
+                    ]
+                )
+
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=message_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
     elif status == "not_found":
         await context.bot.edit_message_text(
             f"Слово '{query}' не найдено.",
             chat_id=chat_id,
-            message_id=status_message.message_id,
+            message_id=message_id,
         )
     elif status == "error":
         await context.bot.edit_message_text(
             "Внешний сервис словаря временно недоступен. Попробуйте, пожалуйста, позже.",
             chat_id=chat_id,
-            message_id=status_message.message_id,
+            message_id=message_id,
         )
     elif status == "db_error":
         await context.bot.edit_message_text(
             "Произошла внутренняя ошибка при сохранении слова. Пожалуйста, попробуйте позже.",
             chat_id=chat_id,
-            message_id=status_message.message_id,
+            message_id=message_id,
         )
 
 
@@ -155,7 +178,9 @@ async def select_word_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
 
-    _, word_id_str, search_query = query.data.split(":")
+    logger.info(query.data)
+
+    _, _, word_id_str, search_query = query.data.split(":")
     word_id = int(word_id_str)
 
     user_id = query.from_user.id
