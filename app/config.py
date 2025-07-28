@@ -46,6 +46,8 @@ CB_DICT_EXECUTE_DELETE = "dict:execute_delete"
 CB_ADD = "word:add"
 CB_SHOW_VERB = "verb:show"
 CB_VIEW_CARD = "word:view"
+CB_SELECT_WORD = "word:select"
+CB_SEARCH_PEALIM = "word:search_pealim"
 
 # Меню тренировок
 CB_TRAIN_MENU = "train:menu"

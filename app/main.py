@@ -35,6 +35,8 @@ from config import (
     CB_EVAL_CORRECT,
     CB_EVAL_INCORRECT,
     CB_END_TRAINING,
+    CB_SEARCH_PEALIM,
+    CB_SELECT_WORD,
 )
 
 # Импортируем обработчики
@@ -44,6 +46,8 @@ from handlers.search import (
     add_word_to_dictionary,
     show_verb_conjugations,
     view_word_card_handler,
+    pealim_search_handler,
+    select_word_handler,
 )
 from handlers.dictionary import (
     view_dictionary_page_handler,
@@ -146,6 +150,14 @@ def main() -> None:
     )
     application.add_handler(
         CallbackQueryHandler(view_word_card_handler, pattern=f"^{CB_VIEW_CARD}:")
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(pealim_search_handler, pattern=f"^{CB_SEARCH_PEALIM}:")
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(select_word_handler, pattern=f"^{CB_SELECT_WORD}:")
     )
 
     application.add_handler(training_conv)

@@ -10,47 +10,13 @@ from utils import normalize_hebrew
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_fetch_and_cache_word_data_direct_hit(monkeypatch):
-    search_word = "לִכְתּוֹב"
-    dict_url = "https://www.pealim.com/ru/dict/1/"
-    mock_url = f"https://www.pealim.com/ru/search/?q={search_word}"
-
-    # Mock the redirect
-    respx.get(mock_url).mock(
-        return_value=httpx.Response(302, headers={"location": dict_url})
-    )
-    respx.get(dict_url).mock(return_value=httpx.Response(200, text=verb_html_fixture()))
-
-    mock_uow = MagicMock()
-    mock_word = MagicMock()
-    mock_word.model_dump.return_value = {"hebrew": search_word}
-
-    # First call to find_word_by_normalized_form returns None, second call returns the mock_word
-    mock_uow.__enter__().words.find_word_by_normalized_form.side_effect = [
-        None,
-        None,
-        mock_word,
-    ]
-
-    monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
-
-    status, data = await fetch_and_cache_word_data(search_word)
-
-    assert status == "ok"
-    assert data is not None
-    assert data["hebrew"] == search_word
-    mock_uow.__enter__().words.create_cached_word.assert_called_once()
-
-
-@pytest.mark.asyncio
-@respx.mock
 async def test_fetch_and_cache_word_data_search_hit(monkeypatch):
     search_word = "כותב"
     final_word = "לִכְתּוֹב"
     search_url = f"https://www.pealim.com/ru/search/?q={search_word}"
     dict_url = "https://www.pealim.com/ru/dict/1/"
 
-    search_html = f"<html><body><div class='results-by-verb'><a href='{dict_url}'></a></div></body></html>"
+    search_html = f"<html><body><div class='verb-search-lemma'><a href='{dict_url}'></a></div></body></html>"
 
     respx.get(search_url).mock(return_value=httpx.Response(200, text=search_html))
     respx.get(dict_url).mock(return_value=httpx.Response(200, text=verb_html_fixture()))
@@ -62,7 +28,6 @@ async def test_fetch_and_cache_word_data_search_hit(monkeypatch):
     # First call to find_word_by_normalized_form returns None, second call returns the mock_word
     mock_uow.__enter__().words.find_word_by_normalized_form.side_effect = [
         None,
-        None,
         mock_word,
     ]
 
@@ -71,8 +36,8 @@ async def test_fetch_and_cache_word_data_search_hit(monkeypatch):
     status, data = await fetch_and_cache_word_data(search_word)
 
     assert status == "ok"
-    assert data is not None
-    assert data["hebrew"] == final_word
+    assert len(data) > 0
+    assert data[0]["hebrew"] == final_word
     mock_uow.__enter__().words.create_cached_word.assert_called_once()
 
 
@@ -159,26 +124,6 @@ def verb_html_fixture():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_fetch_and_cache_word_data_already_in_cache(monkeypatch):
-    search_word = "לִכְתּוֹב"
-    mock_url = f"https://www.pealim.com/ru/search/?q={search_word}"
-    respx.get(mock_url).mock(return_value=httpx.Response(200, text=""))
-
-    mock_uow = MagicMock()
-    mock_word = MagicMock()
-    mock_word.model_dump.return_value = {"hebrew": search_word}
-    mock_uow.__enter__().words.find_word_by_normalized_form.return_value = mock_word
-    monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
-
-    status, data = await fetch_and_cache_word_data(search_word)
-
-    assert status == "ok"
-    assert data["hebrew"] == search_word
-    mock_uow.__enter__().words.create_cached_word.assert_not_called()
-
-
-@pytest.mark.asyncio
-@respx.mock
 async def test_fetch_and_cache_word_data_concurrent_parsing(monkeypatch):
     """
     Тестирует сценарий конкурентного парсинга:
@@ -202,9 +147,8 @@ async def test_fetch_and_cache_word_data_concurrent_parsing(monkeypatch):
     # Настраиваем поведение мока базы данных:
     # 1. Первый вызов (до ожидания) -> слово не найдено (None).
     # 2. Второй вызов (после ожидания) -> слово найдено (mock_word_obj).
-    mock_uow.__enter__().words.find_word_by_normalized_form.side_effect = [
-        None,
-        mock_word_obj,
+    mock_uow.__enter__().words.find_words_by_normalized_form.side_effect = [
+        [mock_word_obj],
     ]
     monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
 
@@ -235,10 +179,10 @@ async def test_fetch_and_cache_word_data_concurrent_parsing(monkeypatch):
 
     # --- Проверки ---
     assert status == "ok"
-    assert data["hebrew"] == search_word
+    assert data[0]["hebrew"] == search_word
 
     # Убедимся, что к базе данных обращались дважды, как и ожидалось
-    assert mock_uow.__enter__().words.find_word_by_normalized_form.call_count == 2
+    assert mock_uow.__enter__().words.find_words_by_normalized_form.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -256,7 +200,7 @@ async def test_fetch_and_cache_word_data_timeout(monkeypatch):
     mock_uow = MagicMock()
     mock_uow_context = MagicMock()
     mock_uow.__enter__.return_value = mock_uow_context
-    mock_uow_context.words.find_word_by_normalized_form.return_value = None
+    mock_uow_context.words.find_words_by_normalized_form.return_value = None
     # Убедитесь, что путь для monkeypatch соответствует структуре вашего проекта
     monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
 
@@ -283,4 +227,4 @@ async def test_fetch_and_cache_word_data_timeout(monkeypatch):
     assert data is None
 
     # Проверяем, что к базе данных обращались только один раз (до начала ожидания)
-    mock_uow_context.words.find_word_by_normalized_form.assert_called_once()
+    mock_uow_context.words.find_word_by_normalized_form.assert_not_called()

@@ -3,7 +3,7 @@
 import re
 import asyncio
 import unicodedata
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, List
 from urllib.parse import quote, urljoin
 
 import httpx
@@ -305,18 +305,105 @@ def parse_noun_or_adjective_page(
         return None
 
 
+async def _parse_disambiguation_page(
+    soup: BeautifulSoup, client: httpx.AsyncClient, base_url: str
+) -> List[Dict]:
+    """Парсит страницу неоднозначности и агрегирует результаты."""
+
+    # Находим все ссылки на страницы конкретных слов
+    links = soup.select("div.verb-search-lemma a")
+    if not links:
+        return []
+
+    # Асинхронно запрашиваем и парсим каждую страницу
+    tasks = []
+    logger.info(links)
+    for link in links:
+        word_url = urljoin(base_url, link["href"])
+        tasks.append(client.get(word_url))
+
+    responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+    parsed_words = []
+    for response in responses:
+        if isinstance(response, httpx.Response) and response.status_code == 200:
+            word_soup = BeautifulSoup(response.text, "html.parser")
+            # Используем уже существующую логику парсинга одной страницы
+            parsed_data = _parse_single_word_page(word_soup)
+            if parsed_data:
+                parsed_words.append(parsed_data)
+
+    return parsed_words
+
+
+def _parse_single_word_page(soup: BeautifulSoup) -> Optional[Dict]:
+    logger.info("Шаг 2: Определение типа страницы...")
+    main_header = soup.find("h2", class_="page-header")
+    if not main_header:
+        logger.error("Парсинг не удался: не найден 'h2' с классом 'page-header'.")
+        return "error", None
+
+    parsed_data = None
+    # Используем мета-тег как основной источник, но оставляем проверку заголовка как запасной вариант
+    part_of_speech = _get_part_of_speech_from_meta(soup)
+
+    if (
+        part_of_speech == "verb"
+        or "спряжение" in main_header.text.lower()
+        or "conjugation" in main_header.text.lower()
+    ):
+        logger.info("Шаг 2.1: Страница определена как ГЛАГОЛ.")
+        parsed_data = parse_verb_page(soup, main_header)
+    elif (
+        part_of_speech in ["noun", "adjective"]
+        or "формы слова" in main_header.text.lower()
+    ):
+        logger.info("Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ.")
+        parsed_data = parse_noun_or_adjective_page(soup, main_header)
+    else:
+        logger.error(f"Не удалось определить тип страницы для: {main_header.text}")
+        return "error", None
+
+    logger.info("Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга...")
+    if not parsed_data:
+        logger.error("Парсинг не удался: одна из функций парсинга вернула None.")
+        return "error", None
+
+    logger.info(f"Шаг 3.1: Парсер успешно вернул данные для '{parsed_data['hebrew']}'.")
+    parsed_data["normalized_hebrew"] = normalize_hebrew(parsed_data["hebrew"])
+    if parsed_data.get("conjugations"):
+        for conj in parsed_data["conjugations"]:
+            conj["normalized_hebrew_form"] = normalize_hebrew(conj["hebrew_form"])
+
+    word_to_create = {
+        "hebrew": parsed_data["hebrew"],
+        "normalized_hebrew": parsed_data["normalized_hebrew"],
+        "transcription": parsed_data.get("transcription"),
+        "is_verb": parsed_data.get("is_verb", False),
+        "part_of_speech": parsed_data.get("part_of_speech"),
+        "root": parsed_data.get("root"),
+        "binyan": parsed_data.get("binyan"),
+        "translations": parsed_data.get("translations", []),
+        "conjugations": parsed_data.get("conjugations", []),
+        "gender": parsed_data.get("gender"),
+        "singular_form": parsed_data.get("singular_form"),
+        "plural_form": parsed_data.get("plural_form"),
+        "masculine_singular": parsed_data.get("masculine_singular"),
+        "feminine_singular": parsed_data.get("feminine_singular"),
+        "masculine_plural": parsed_data.get("masculine_plural"),
+        "feminine_plural": parsed_data.get("feminine_plural"),
+    }
+
+    return word_to_create
+
+
 async def fetch_and_cache_word_data(
     search_word: str,
-) -> Tuple[str, Optional[Dict[str, Any]]]:
+) -> Tuple[str, List[Dict]]:
     """
     Асинхронная функция-диспетчер парсинга. Нормализует, ищет, парсит и сохраняет данные.
     """
     normalized_search_word = normalize_hebrew(search_word)
-
-    with UnitOfWork() as uow:
-        result = uow.words.find_word_by_normalized_form(normalized_search_word)
-        if result:
-            return "ok", result.model_dump()
 
     async with PARSING_EVENTS_LOCK:
         if normalized_search_word not in PARSING_EVENTS:
@@ -336,9 +423,11 @@ async def fetch_and_cache_word_data(
                 f"Ожидание для '{search_word}' завершено, повторный поиск в кэше."
             )
             with UnitOfWork() as uow:
-                result = uow.words.find_word_by_normalized_form(normalized_search_word)
-            if result:
-                return "ok", result.model_dump()
+                results = uow.words.find_words_by_normalized_form(
+                    normalized_search_word
+                )
+            if len(results) > 0:
+                return "ok", [result.model_dump() for result in results]
             return "not_found", None
         except asyncio.TimeoutError:
             logger.warning(f"Таймаут ожидания для '{search_word}'.")
@@ -361,19 +450,11 @@ async def fetch_and_cache_word_data(
                 # Если после поиска мы не на странице словаря, ищем ссылку
                 if "/dict/" not in str(response.url):
                     search_soup = BeautifulSoup(response.text, "html.parser")
-                    results_container = search_soup.find(
-                        "div", class_="results-by-verb"
-                    ) or search_soup.find("div", class_="results-by-meaning")
-                    if results_container:
-                        result_link = results_container.find(
-                            "a", href=re.compile(r"/dict/")
-                        )
-                        if result_link and result_link.get("href"):
-                            final_url = urljoin(str(response.url), result_link["href"])
-                            response = await client.get(final_url, timeout=10)
-                            response.raise_for_status()
+                    parsed_data_list = await _parse_disambiguation_page(
+                        search_soup, client, str(response.url)
+                    )
 
-                if "/dict/" not in str(response.url):
+                if not parsed_data_list:
                     logger.warning(
                         f"Не найдено результатов ни в русской, ни в английской версии для '{search_word}'."
                     )
@@ -385,105 +466,29 @@ async def fetch_and_cache_word_data(
                 )
                 return "error", None
 
-        logger.info("Шаг 1.4: Финальная страница успешно загружена.")
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        logger.info("Шаг 2: Определение типа страницы...")
-        main_header = soup.find("h2", class_="page-header")
-        if not main_header:
-            logger.error("Парсинг не удался: не найден 'h2' с классом 'page-header'.")
-            return "error", None
-
-        parsed_data = None
-        # Используем мета-тег как основной источник, но оставляем проверку заголовка как запасной вариант
-        part_of_speech = _get_part_of_speech_from_meta(soup)
-
-        if (
-            part_of_speech == "verb"
-            or "спряжение" in main_header.text.lower()
-            or "conjugation" in main_header.text.lower()
-        ):
-            logger.info("Шаг 2.1: Страница определена как ГЛАГОЛ.")
-            parsed_data = parse_verb_page(soup, main_header)
-        elif (
-            part_of_speech in ["noun", "adjective"]
-            or "формы слова" in main_header.text.lower()
-        ):
-            logger.info(
-                "Шаг 2.1: Страница определена как СУЩЕСТВИТЕЛЬНОЕ/ПРИЛАГАТЕЛЬНОЕ."
-            )
-            parsed_data = parse_noun_or_adjective_page(soup, main_header)
-        else:
-            logger.error(f"Не удалось определить тип страницы для: {main_header.text}")
-            return "error", None
-
-        logger.info("Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга...")
-        if not parsed_data:
-            logger.error("Парсинг не удался: одна из функций парсинга вернула None.")
-            return "error", None
-
-        logger.info(
-            f"Шаг 3.1: Парсер успешно вернул данные для '{parsed_data['hebrew']}'."
-        )
-        parsed_data["normalized_hebrew"] = normalize_hebrew(parsed_data["hebrew"])
-        if parsed_data.get("conjugations"):
-            for conj in parsed_data["conjugations"]:
-                conj["normalized_hebrew_form"] = normalize_hebrew(conj["hebrew_form"])
-
         with UnitOfWork() as uow:
-            if uow.words.find_word_by_normalized_form(parsed_data["normalized_hebrew"]):
-                logger.info(
-                    f"Шаг 3.2: Нормализованная форма '{parsed_data['normalized_hebrew']}' уже есть в кэше. Сохранение не требуется."
+            for word_data in parsed_data_list:
+                word = uow.words.find_word_by_normalized_form(
+                    word_data["normalized_hebrew"], True
                 )
-                result = uow.words.find_word_by_normalized_form(
-                    parsed_data["normalized_hebrew"]
-                )
-                return "ok", result.model_dump() if result else None
-
-            logger.info(
-                f"Шаг 4: Сохранение '{parsed_data['hebrew']}' и его форм в БД..."
-            )
-
-            word_to_create = {
-                "hebrew": parsed_data["hebrew"],
-                "normalized_hebrew": parsed_data["normalized_hebrew"],
-                "transcription": parsed_data.get("transcription"),
-                "is_verb": parsed_data.get("is_verb", False),
-                "part_of_speech": parsed_data.get("part_of_speech"),
-                "root": parsed_data.get("root"),
-                "binyan": parsed_data.get("binyan"),
-                "translations": parsed_data.get("translations", []),
-                "conjugations": parsed_data.get("conjugations", []),
-                "gender": parsed_data.get("gender"),
-                "singular_form": parsed_data.get("singular_form"),
-                "plural_form": parsed_data.get("plural_form"),
-                "masculine_singular": parsed_data.get("masculine_singular"),
-                "feminine_singular": parsed_data.get("feminine_singular"),
-                "masculine_plural": parsed_data.get("masculine_plural"),
-                "feminine_plural": parsed_data.get("feminine_plural"),
-            }
-
-            uow.words.create_cached_word(**word_to_create)
+                if word is None:
+                    uow.words.create_cached_word(**word_data)
             uow.commit()
 
-        logger.info("Шаг 5: Ожидание появления слова в БД и возврат результата...")
-        final_word_data = None
+        logger.info("Шаг 5: Ожидание появления слов в БД и возврат результата...")
+        final_words_data = []
         with UnitOfWork() as uow:
-            result = uow.words.find_word_by_normalized_form(
-                parsed_data["normalized_hebrew"]
-            )
-            if result:
-                final_word_data = result
-                logger.info("Шаг 5.x: Слово успешно найдено в БД.")
-
-        if final_word_data:
-            logger.info(f"--- Парсинг для '{search_word}' завершен УСПЕШНО. ---")
-            return "ok", final_word_data.model_dump()
-        else:
-            logger.error(
-                f"--- Парсинг для '{search_word}' завершен с ОШИБКОЙ БД (не удалось прочитать запись после сохранения). ---"
-            )
-            return "db_error", None
+            for word_data in parsed_data_list:
+                result = uow.words.find_word_by_normalized_form(
+                    word_data["normalized_hebrew"], True
+                )
+                if result:
+                    final_words_data.append(result.model_dump())
+                    logger.info(
+                        f"Шаг 5.x: Слово {word_data['normalized_hebrew']} успешно найдено в БД."
+                    )
+        logger.info(final_words_data)
+        return "ok", final_words_data
 
     except Exception as e:
         logger.error(

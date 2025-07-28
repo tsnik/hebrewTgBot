@@ -75,29 +75,49 @@ class WordRepository(BaseRepository):
         return self._row_to_model(conjugation_data, VerbConjugation)
 
     def find_word_by_normalized_form(
-        self, normalized_word: str
+        self, normalized_word: str, only_normalized_form: Optional[bool] = False
     ) -> Optional[CachedWord]:
         cursor = self.connection.cursor()
         word_id = None
 
-        conjugation_query = (
-            "SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?"
-        )
-        cursor.execute(conjugation_query, (normalized_word,))
-        conjugation = cursor.fetchone()
-        if conjugation:
-            word_id = conjugation["word_id"]
-        else:
-            word_query = "SELECT word_id FROM cached_words WHERE normalized_hebrew = ?"
-            cursor.execute(word_query, (normalized_word,))
-            word_data_row = cursor.fetchone()
-            if word_data_row:
-                word_id = word_data_row["word_id"]
+        word_query = "SELECT word_id FROM cached_words WHERE normalized_hebrew = ?"
+        cursor.execute(word_query, (normalized_word,))
+        word_data_row = cursor.fetchone()
+        if word_data_row:
+            word_id = word_data_row["word_id"]
+
+        if word_id is None and not only_normalized_form:
+            conjugation_query = (
+                "SELECT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?"
+            )
+            cursor.execute(conjugation_query, (normalized_word,))
+            conjugation = cursor.fetchone()
+            if conjugation:
+                word_id = conjugation["word_id"]
 
         if not word_id:
             return None
 
         return self.get_word_by_id(word_id)
+
+    def find_words_by_normalized_form(self, normalized_word: str) -> List[CachedWord]:
+        """Ищет все канонические слова, совпадающие с нормализованной формой."""
+        cursor = self.connection.cursor()
+        query = "SELECT word_id FROM cached_words WHERE normalized_hebrew = ?"
+        cursor.execute(query, (normalized_word,))
+        word_ids = [row["word_id"] for row in cursor.fetchall()]
+
+        # Также ищем по формам спряжений, чтобы найти инфинитив
+        conj_query = "SELECT DISTINCT word_id FROM verb_conjugations WHERE normalized_hebrew_form = ?"
+        cursor.execute(conj_query, (normalized_word,))
+        conj_word_ids = [row["word_id"] for row in cursor.fetchall()]
+
+        all_ids = list(set(word_ids + conj_word_ids))
+
+        if not all_ids:
+            return []
+
+        return [self.get_word_by_id(word_id) for word_id in all_ids if word_id]
 
     def get_word_hebrew_by_id(self, word_id: int) -> Optional[str]:
         query = "SELECT hebrew FROM cached_words WHERE word_id = ?"
