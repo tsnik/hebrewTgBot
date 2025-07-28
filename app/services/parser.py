@@ -428,7 +428,7 @@ async def fetch_and_cache_word_data(
                     normalized_search_word
                 )
             if len(results) > 0:
-                return "ok", [result.model_dump() for result in results]
+                return "ok", results
             return "not_found", None
         except asyncio.TimeoutError:
             logger.warning(f"Таймаут ожидания для '{search_word}'.")
@@ -484,9 +484,9 @@ async def fetch_and_cache_word_data(
                     word_data["normalized_hebrew"], True
                 )
                 if result:
-                    final_words_data.append(result.model_dump())
+                    final_words_data.append(result)
                     logger.info(
-                        f"Шаг 5.x: Слово {word_data['normalized_hebrew']} успешно найдено в БД."
+                        f"Шаг 5.x: Слово {result.normalized_hebrew} успешно найдено в БД."
                     )
         logger.info(final_words_data)
         return "ok", final_words_data

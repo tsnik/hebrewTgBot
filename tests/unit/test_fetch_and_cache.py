@@ -23,7 +23,7 @@ async def test_fetch_and_cache_word_data_search_hit(monkeypatch):
 
     mock_uow = MagicMock()
     mock_word = MagicMock()
-    mock_word.model_dump.return_value = {"hebrew": final_word}
+    mock_word.hebrew = final_word
 
     # First call to find_word_by_normalized_form returns None, second call returns the mock_word
     mock_uow.__enter__().words.find_word_by_normalized_form.side_effect = [
@@ -37,7 +37,7 @@ async def test_fetch_and_cache_word_data_search_hit(monkeypatch):
 
     assert status == "ok"
     assert len(data) > 0
-    assert data[0]["hebrew"] == final_word
+    assert data[0].hebrew == final_word
     mock_uow.__enter__().words.create_cached_word.assert_called_once()
 
 
@@ -139,10 +139,8 @@ async def test_fetch_and_cache_word_data_concurrent_parsing(monkeypatch):
     mock_uow = MagicMock()
     mock_word_obj = MagicMock()
     # model_dump() должен возвращать словарь, который будет итоговым результатом
-    mock_word_obj.model_dump.return_value = {
-        "hebrew": search_word,
-        "normalized_hebrew": normalized_word,
-    }
+    mock_word_obj.hebrew = search_word
+    mock_word_obj.normalized_hebrew = normalized_word
 
     # Настраиваем поведение мока базы данных:
     # 1. Первый вызов (до ожидания) -> слово не найдено (None).
@@ -179,7 +177,7 @@ async def test_fetch_and_cache_word_data_concurrent_parsing(monkeypatch):
 
     # --- Проверки ---
     assert status == "ok"
-    assert data[0]["hebrew"] == search_word
+    assert data[0].hebrew == search_word
 
     # Убедимся, что к базе данных обращались дважды, как и ожидалось
     assert mock_uow.__enter__().words.find_words_by_normalized_form.call_count == 1

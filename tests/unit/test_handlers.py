@@ -103,11 +103,20 @@ async def test_back_to_main_menu():
             {
                 "word_id": 1,
                 "hebrew": "חדש",
+                "normalized_hebrew": "חדש",
                 "transcription": "chadash",
                 "part_of_speech": "adjective",
-                "translations": [{"translation_text": "new", "is_primary": True}],
+                "translations": [
+                    {
+                        "translation_id": 1,
+                        "translation_text": "new",
+                        "is_primary": True,
+                        "word_id": 1,
+                    }
+                ],
                 "masculine_singular": "חדש",
                 "feminine_singular": "חדשה",
+                "fetched_at": datetime.now(),
             },
             False,
             None,
@@ -119,11 +128,20 @@ async def test_back_to_main_menu():
             {
                 "word_id": 2,
                 "hebrew": "ישן",
+                "normalized_hebrew": "ישן",
                 "transcription": "yashan",
                 "part_of_speech": "noun",
-                "translations": [{"translation_text": "old", "is_primary": True}],
+                "translations": [
+                    {
+                        "translation_id": 1,
+                        "translation_text": "old",
+                        "is_primary": True,
+                        "word_id": 2,
+                    }
+                ],
                 "gender": "masculine",
                 "plural_form": "ישנים",
+                "fetched_at": datetime.now(),
             },
             True,
             12345,
@@ -135,11 +153,20 @@ async def test_back_to_main_menu():
             {
                 "word_id": 3,
                 "hebrew": "לכתוב",
+                "normalized_hebrew": "לכתוב",
                 "transcription": "lichtov",
                 "part_of_speech": "verb",
-                "translations": [{"translation_text": "to write", "is_primary": True}],
+                "translations": [
+                    {
+                        "translation_id": 1,
+                        "translation_text": "to write",
+                        "is_primary": True,
+                        "word_id": 3,
+                    }
+                ],
                 "root": "כ.ת.ב",
                 "binyan": "pa'al",
+                "fetched_at": datetime.now(),
             },
             False,
             None,
@@ -167,7 +194,7 @@ async def test_display_word_card(
             context,
             user_id,
             chat_id,
-            word_data,
+            CachedWord(**word_data),
             message_id,
             # Передаем in_dictionary=None, чтобы симулировать реальный вызов,
             # где этот параметр определяется внутри функции
@@ -568,14 +595,34 @@ async def test_search_in_pealim_success_multiple_results():
         {
             "word_id": 100,
             "hebrew": "חָלָב",
-            "translations": [{"translation_text": "молоко"}],
+            "normalized_hebrew": "חָלָב",
+            "translations": [
+                {
+                    "translation_text": "молоко",
+                    "translation_id": 1,
+                    "word_id": 100,
+                    "is_primary": True,
+                }
+            ],
+            "fetched_at": datetime.now(),
         },
         {
             "word_id": 101,
             "hebrew": "לַחְלוֹב",
-            "translations": [{"translation_text": "доить"}],
+            "normalized_hebrew": "חָלָב",
+            "translations": [
+                {
+                    "translation_text": "доить",
+                    "translation_id": 2,
+                    "word_id": 100,
+                    "is_primary": True,
+                }
+            ],
+            "fetched_at": datetime.now(),
         },
     ]
+
+    mock_data = [CachedWord(**word) for word in mock_data]
 
     with patch(
         "handlers.search.fetch_and_cache_word_data", new_callable=AsyncMock

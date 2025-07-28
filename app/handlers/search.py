@@ -45,7 +45,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Случай 1.2: Одно совпадение
     if len(found_words) == 1:
-        word_data = found_words[0].model_dump()
+        word_data = found_words[0]
         await display_word_card(
             context,
             user_id,
@@ -126,16 +126,14 @@ async def search_in_pealim(
             )
             keyboard = []
             for word in data_list:
-                primary_translation = word.get("translations", [{}])[0].get(
-                    "translation_text", ""
-                )
-                button_text = f"{word['hebrew']} - {primary_translation}"
+                primary_translation = word.translations[0].translation_text
+                button_text = f"{word.hebrew} - {primary_translation}"
                 keyboard.append(
                     [
                         InlineKeyboardButton(
                             button_text,
                             # Важно! Используем word_id, который был присвоен при сохранении в БД
-                            callback_data=f"{CB_SELECT_WORD}:{word['word_id']}:{query}",
+                            callback_data=f"{CB_SELECT_WORD}:{word.word_id}:{query}",
                         )
                     ]
                 )
@@ -194,7 +192,7 @@ async def select_word_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             context,
             user_id,
             chat_id,
-            word_data.model_dump(),
+            word_data,
             message_id=query.message.message_id,
             show_pealim_search_button=True,  # Также показываем кнопку
             search_query=search_query,
@@ -218,7 +216,7 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
         word_data = uow.words.get_word_by_id(word_id)
 
     if word_data:
-        word_dict = word_data.model_dump()
+        word_dict = word_data
         await display_word_card(
             context,
             user_id,
@@ -294,7 +292,7 @@ async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_T
         word_data = uow.words.get_word_by_id(word_id)
 
     if word_data:
-        word_dict = word_data.model_dump()
+        word_dict = word_data
         await display_word_card(
             context, user_id, chat_id, word_data=word_dict, message_id=message_id
         )
