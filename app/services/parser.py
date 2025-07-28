@@ -362,12 +362,12 @@ def _parse_single_word_page(soup: BeautifulSoup) -> Optional[Dict]:
         parsed_data = parse_noun_or_adjective_page(soup, main_header)
     else:
         logger.error(f"Не удалось определить тип страницы для: {main_header.text}")
-        return "error", None
+        return None
 
     logger.info("Шаг 3: Обработка и НОРМАЛИЗАЦИЯ результата парсинга...")
     if not parsed_data:
         logger.error("Парсинг не удался: одна из функций парсинга вернула None.")
-        return "error", None
+        return None
 
     logger.info(f"Шаг 3.1: Парсер успешно вернул данные для '{parsed_data['hebrew']}'.")
     parsed_data["normalized_hebrew"] = normalize_hebrew(parsed_data["hebrew"])
@@ -404,6 +404,7 @@ async def fetch_and_cache_word_data(
     Асинхронная функция-диспетчер парсинга. Нормализует, ищет, парсит и сохраняет данные.
     """
     normalized_search_word = normalize_hebrew(search_word)
+    parsed_data_list = None
 
     async with PARSING_EVENTS_LOCK:
         if normalized_search_word not in PARSING_EVENTS:
