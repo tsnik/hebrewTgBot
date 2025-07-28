@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from config import CB_VIEW_CARD, CB_SEARCH_PEALIM, CB_SELECT_WORD, logger
+from config import CB_VIEW_CARD, CB_SEARCH_PEALIM, CB_SELECT_WORD, PERSON_MAP, logger
 from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card
@@ -265,8 +265,9 @@ async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_T
     for tense, conj_list in conjugations_by_tense.items():
         message_text += f"\n*{tense.capitalize()}*:\n"
         for conj in conj_list:
+            person_display = PERSON_MAP.get(conj.person, conj.person)
             message_text += (
-                f"_{conj.person}_: {conj.hebrew_form} ({conj.transcription})\n"
+                f"_{person_display}_: {conj.hebrew_form} ({conj.transcription})\n"
             )
 
     if len(message_text) > 4096:

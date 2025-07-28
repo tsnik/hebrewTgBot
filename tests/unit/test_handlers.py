@@ -1058,8 +1058,8 @@ async def test_start_verb_trainer_happy_path():
 
     mock_verb = MagicMock(word_id=10, hebrew="לכתוב")
     mock_conjugation = MagicMock(
-        tense="FUTURE",
-        person="1st plural",
+        tense="БУДУЩЕЕ",
+        person="1p",
         hebrew_form="נכתוב",
     )
 
@@ -1081,7 +1081,7 @@ async def test_start_verb_trainer_happy_path():
         # ИСПРАВЛЕНО: Обращаемся к позиционному аргументу args[0]
         call_text = update.callback_query.edit_message_text.call_args.args[0]
         assert "Глагол: *לכתוב*" in call_text
-        assert "Напишите его форму для:\n*FUTURE, 1st plural*" in call_text
+        assert "Напишите его форму для:\n*Будущее, 1 л., мн.ч. (мы)*" in call_text
 
 
 @pytest.mark.asyncio
@@ -1095,8 +1095,8 @@ async def test_start_verb_trainer_retry_logic():
     mock_verb_no_conj = MagicMock(word_id=11, hebrew="פועל_בלי_כלום")
     mock_verb_with_conj = MagicMock(word_id=12, hebrew="לרוץ")
     mock_conjugation = MagicMock(
-        tense="PRESENT",
-        person="m. plural",
+        tense="Настоящее",
+        person="1p",
         hebrew_form="רצים",
     )
 
@@ -1126,7 +1126,7 @@ async def test_start_verb_trainer_retry_logic():
         # ИСПРАВЛЕНО: Обращаемся к позиционному аргументу args[0]
         call_text = update.callback_query.edit_message_text.call_args.args[0]
         assert "Глагол: *לרוץ*" in call_text
-        assert "PRESENT, m. plural" in call_text
+        assert "Настоящее, 1 л., мн.ч. (мы)" in call_text
 
 
 @pytest.mark.asyncio
