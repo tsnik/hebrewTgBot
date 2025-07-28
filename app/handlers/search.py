@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from config import CB_VIEW_CARD
+from config import CB_VIEW_CARD, CB_SEARCH_PEALIM, CB_SELECT_WORD
 from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card
@@ -35,17 +35,85 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     normalized_text = normalize_hebrew(text)
 
     with UnitOfWork() as uow:
-        word_data = uow.words.find_word_by_normalized_form(normalized_text)
-        if word_data:
-            word_dict = word_data.model_dump()
-            await display_word_card(context, user_id, chat_id, word_dict)
-            return
+        # Используем новый метод, возвращающий список
+        found_words = uow.words.find_words_by_normalized_form(normalized_text)
 
-    status_message = await update.message.reply_text(
-        "🔎 Ищу слово во внешнем словаре..."
-    )
+    # Случай 1.1: Нет совпадений в локальной БД
+    if not found_words:
+        await search_in_pealim(update, context, normalized_text)
+        return
 
-    status, data = await fetch_and_cache_word_data(text)
+    # Случай 1.2: Одно совпадение
+    if len(found_words) == 1:
+        word_data = found_words[0].model_dump()
+        await display_word_card(
+            context,
+            user_id,
+            chat_id,
+            word_data,
+            show_pealim_search_button=True,  # Показываем кнопку
+            search_query=normalized_text,
+        )
+        return
+
+    # Случай 1.3: Несколько совпадений
+    if len(found_words) > 1:
+        message_text = "Найдено несколько вариантов. Выберите нужный:"
+        keyboard = []
+        for word in found_words:
+            primary_translation = next(
+                (t.translation_text for t in word.translations if t.is_primary), ""
+            )
+            button_text = f"{word.hebrew} - {primary_translation}"
+            # Используем новую константу для callback
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        button_text,
+                        callback_data=f"{CB_SELECT_WORD}:{word.word_id}:{normalized_text}",
+                    )
+                ]
+            )
+
+        # Добавляем кнопку поиска в Pealim
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    "🔎 Искать еще в Pealim",
+                    callback_data=f"{CB_SEARCH_PEALIM}:{normalized_text}",
+                )
+            ]
+        )
+
+        await update.message.reply_text(
+            message_text, reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+
+async def search_in_pealim(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, query: str
+):
+    """Выполняет поиск слова во внешнем источнике."""
+    chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+
+    # Проверяем, было ли сообщение от пользователя или это callback
+    if update.message:
+        status_message = await update.message.reply_text(
+            "🔎 Ищу слово во внешнем словаре..."
+        )
+        message_id = status_message.message_id
+    else:  # Если это callback_query
+        await update.callback_query.answer()
+        # Редактируем сообщение, с которого пришел callback
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=update.callback_query.message.message_id,
+            text="🔎 Ищу слово во внешнем словаре...",
+        )
+        message_id = update.callback_query.message.message_id
+
+    status, data = await fetch_and_cache_word_data(query)
 
     if status == "ok" and data:
         await display_word_card(
@@ -53,11 +121,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             user_id,
             chat_id,
             word_data=data,
-            message_id=status_message.message_id,
+            message_id=message_id,
         )
     elif status == "not_found":
         await context.bot.edit_message_text(
-            f"Слово '{text}' не найдено.",
+            f"Слово '{query}' не найдено.",
             chat_id=chat_id,
             message_id=status_message.message_id,
         )
@@ -73,6 +141,42 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             chat_id=chat_id,
             message_id=status_message.message_id,
         )
+
+
+async def pealim_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик кнопки 'Искать еще в Pealim'."""
+    query_data = update.callback_query.data.split(":")
+    search_query = query_data[2]
+    await search_in_pealim(update, context, search_query)
+
+
+async def select_word_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик выбора одного из нескольких найденных слов."""
+    query = update.callback_query
+    await query.answer()
+
+    _, word_id_str, search_query = query.data.split(":")
+    word_id = int(word_id_str)
+
+    user_id = query.from_user.id
+    chat_id = query.message.chat_id
+
+    with UnitOfWork() as uow:
+        word_data = uow.words.get_word_by_id(word_id)
+
+    if word_data:
+        await display_word_card(
+            context,
+            user_id,
+            chat_id,
+            word_data.model_dump(),
+            message_id=query.message.message_id,
+            show_pealim_search_button=True,  # Также показываем кнопку
+            search_query=search_query,
+        )
+    else:
+        # Обработка ошибки, если слово не найдено
+        await query.edit_message_text("Ошибка: не удалось найти выбранное слово.")
 
 
 async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_TYPE):

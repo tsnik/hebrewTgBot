@@ -13,6 +13,7 @@ from config import (
     CB_ADD,
     CB_DICT_CONFIRM_DELETE,
     CB_SHOW_VERB,
+    CB_SEARCH_PEALIM,
 )
 from dal.unit_of_work import UnitOfWork
 
@@ -54,6 +55,8 @@ async def display_word_card(
     word_data: dict,
     message_id: Optional[int] = None,
     in_dictionary: Optional[bool] = None,
+    show_pealim_search_button: bool = False,
+    search_query: Optional[str] = None,
 ):
     """
     Отображает карточку слова. Редактирует существующее сообщение, если
@@ -119,31 +122,45 @@ async def display_word_card(
     # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
 
     keyboard_buttons = []
+    action_buttons = []
+
     if in_dictionary:
-        # При переходе в режим удаления всегда открываем первую страницу
-        keyboard_buttons.append(
+        action_buttons.append(
             InlineKeyboardButton(
                 "🗑️ Удалить", callback_data=f"{CB_DICT_CONFIRM_DELETE}:{word_id}:0"
             )
         )
     else:
-        keyboard_buttons.append(
+        action_buttons.append(
             InlineKeyboardButton("➕ Добавить", callback_data=f"{CB_ADD}:{word_id}")
         )
 
     # *** ИЗМЕНЕНА ПРОВЕРКА ***
     if word_data.get("part_of_speech") == "verb":
-        keyboard_buttons.append(
+        action_buttons.append(
             InlineKeyboardButton(
                 "📖 Спряжения", callback_data=f"{CB_SHOW_VERB}:{word_id}"
             )
         )
 
-    keyboard = [
-        keyboard_buttons,
-        [InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    keyboard_buttons.append(action_buttons)
+
+    # НОВАЯ ЛОГИКА: Добавление кнопки поиска в Pealim
+    if show_pealim_search_button and search_query:
+        keyboard_buttons.append(
+            [
+                InlineKeyboardButton(
+                    "🔎 Искать еще в Pealim",
+                    callback_data=f"{CB_SEARCH_PEALIM}:{search_query}",
+                )
+            ]
+        )
+
+    keyboard_buttons.append(
+        [InlineKeyboardButton("⬅️ В главное меню", callback_data="main_menu")]
+    )
+
+    reply_markup = InlineKeyboardMarkup(keyboard_buttons)
 
     try:
         if message_id:
