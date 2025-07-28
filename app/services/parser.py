@@ -183,13 +183,6 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
         logger.info("--> parse_verb_page: Поиск спряжений...")
         conjugations = []
         verb_forms = soup.find_all("div", id=re.compile(r"^(AP|PERF|IMPF|IMP|INF)-"))
-        tense_map = {
-            "AP": "настоящее",
-            "PERF": "прошедшее",
-            "IMPF": "будущее",
-            "IMP": "повелительное",
-            "INF": "инфинитив",
-        }
         for form in verb_forms:
             form_id, menukad_tag, trans_tag = (
                 form.get("id"),
@@ -197,13 +190,13 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
                 form.find("div", class_="transcription"),
             )
             if all([form_id, menukad_tag, trans_tag]):
-                tense_prefix = form_id.split("-")[0]
+                tense_prefix = form_id.split("-")[0].lower()
                 person = (
                     form_id.split("-")[1] if len(form_id.split("-")) > 1 else "форма"
                 )
                 conjugations.append(
                     {
-                        "tense": tense_map.get(tense_prefix),
+                        "tense": tense_prefix,
                         "person": person,
                         "hebrew_form": menukad_tag.text.strip(),
                         "transcription": trans_tag.text.strip(),

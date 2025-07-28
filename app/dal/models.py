@@ -3,6 +3,45 @@
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
+from enum import Enum
+
+
+class PartOfSpeech(str, Enum):
+    VERB = "verb"
+    NOUN = "noun"
+    ADJECTIVE = "adjective"
+
+
+class Gender(str, Enum):
+    MASCULINE = "masculine"
+    FEMININE = "feminine"
+
+
+class Tense(str, Enum):
+    PAST = "perf"
+    PRESENT = "ap"
+    FUTURE = "impf"
+    IMPERATIVE = "imp"
+    INFINITIVE = "inf"
+
+
+class Person(str, Enum):
+    MS = "ms"
+    FS = "fs"
+    MP = "mp"
+    FP = "fp"
+    S1 = "1s"
+    P1 = "1p"
+    S2_M = "2ms"
+    S2_F = "2fs"
+    P2_M = "2mp"
+    P2_F = "2fp"
+    S3_M = "3ms"
+    S3_F = "3fs"
+    P3 = "3p"
+    P3_M = "3mp"
+    P3_F = "3fp"
+    L = "L"
 
 
 class Translation(BaseModel):
@@ -16,8 +55,8 @@ class Translation(BaseModel):
 class VerbConjugation(BaseModel):
     id: int
     word_id: int
-    tense: str
-    person: str
+    tense: Tense
+    person: Person
     hebrew_form: str
     normalized_hebrew_form: str
     transcription: str
@@ -28,13 +67,13 @@ class CachedWord(BaseModel):
     hebrew: str
     normalized_hebrew: str
     transcription: Optional[str] = None
-    part_of_speech: Optional[str] = None
+    part_of_speech: Optional[PartOfSpeech] = None
     root: Optional[str] = None
     binyan: Optional[str] = None
     fetched_at: datetime
     translations: List[Translation] = []
     conjugations: List[VerbConjugation] = []
-    gender: Optional[str] = None
+    gender: Optional[Gender] = None
     singular_form: Optional[str] = None
     plural_form: Optional[str] = None
     masculine_singular: Optional[str] = None

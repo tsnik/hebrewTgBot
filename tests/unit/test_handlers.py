@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime
 
 # Эти импорты верны, так как они отражают структуру вашего проекта
-from dal.models import CachedWord, Translation
+from dal.models import CachedWord, Translation, VerbConjugation
 from handlers.common import start, main_menu, back_to_main_menu, display_word_card
 from telegram.ext import ConversationHandler
 from handlers.dictionary import (
@@ -862,9 +862,12 @@ async def test_show_verb_conjugations_success():
     word_id = 1
 
     mock_conjugations = [
-        MagicMock(
-            tense="PAST",
-            person="1st singular",
+        VerbConjugation(
+            id=1,
+            word_id=word_id,
+            normalized_hebrew_form="",
+            tense="perf",
+            person="1s",
             hebrew_form="אני הייתי",
             transcription="ani hayiti",
         )
@@ -887,8 +890,9 @@ async def test_show_verb_conjugations_success():
 
         call_args, call_kwargs = update.callback_query.edit_message_text.call_args
         assert "Спряжения для *להיות*" in call_args[0]
-        assert "*Past*:" in call_args[0]
-        assert "_1st singular_: אני הייתי (ani hayiti)" in call_args[0]
+        assert "Прошедшее" in call_args[0]
+        assert "אני הייתי (ani hayiti)" in call_args[0]
+        assert "1 л., ед.ч. (я)" in call_args[0]
 
 
 @pytest.mark.asyncio
