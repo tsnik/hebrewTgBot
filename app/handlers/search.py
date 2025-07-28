@@ -5,31 +5,11 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from config import CB_VIEW_CARD, CB_SEARCH_PEALIM, CB_SELECT_WORD, logger
+from config import CB_VIEW_CARD, CB_SEARCH_PEALIM, CB_SELECT_WORD, PERSON_MAP, logger
 from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card
 from dal.unit_of_work import UnitOfWork
-
-# ДОБАВЛЕН СЛОВАРЬ ДЛЯ ОТОБРАЖЕНИЯ ЛИЦ
-PERSON_MAP = {
-    "1s": "1 л., ед.ч. (я)",
-    "1p": "1 л., мн.ч. (мы)",
-    "2ms": "2 л., м.р., ед.ч. (ты)",
-    "2fs": "2 л., ж.р., ед.ч. (ты)",
-    "2mp": "2 л., м.р., мн.ч. (вы)",
-    "2fp": "2 л., ж.р., мн.ч. (вы)",
-    "3ms": "3 л., м.р., ед.ч. (он)",
-    "3fs": "3 л., ж.р., ед.ч. (она)",
-    "3p": "3 л., мн.ч. (они)",
-    "3fp": "3 л., ж.р., мн.ч. (они)",
-    "3mp": "3 л., м.р., мн.ч. (они)",
-    # Для форм настоящего времени, где нет стандартного лица
-    "ms": "м.р., ед.ч.",
-    "fs": "ж.р., ед.ч.",
-    "mp": "м.р., мн.ч.",
-    "fp": "ж.р., мн.ч.",
-}
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

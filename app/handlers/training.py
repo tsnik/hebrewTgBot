@@ -22,6 +22,7 @@ from config import (
     CB_EVAL_INCORRECT,
     CB_END_TRAINING,
     VERB_TRAINER_RETRY_ATTEMPTS,
+    PERSON_MAP,
 )
 from dal.unit_of_work import UnitOfWork
 from utils import normalize_hebrew
@@ -242,7 +243,10 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     context.user_data["answer"] = conjugation
 
-    question_text = f"Глагол: *{verb.hebrew}*\n\nНапишите его форму для:\n*{conjugation.tense}, {conjugation.person}*"
+    person_display = PERSON_MAP.get(conjugation.person, conjugation.person)
+    tense_display = conjugation.tense.capitalize()
+
+    question_text = f"Глагол: *{verb.hebrew}*\n\nНапишите его форму для:\n*{tense_display}, {person_display}*"
     await query.edit_message_text(question_text, parse_mode=ParseMode.MARKDOWN)
 
     return AWAITING_VERB_ANSWER
