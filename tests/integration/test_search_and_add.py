@@ -12,19 +12,23 @@ from dal.unit_of_work import UnitOfWork
 TEST_USER_ID = 123456789
 TEST_CHAT_ID = 987654321
 
+
 @pytest.fixture(scope="module")
 def fixtures_path() -> Path:
     return Path(__file__).parent.parent / "fixtures"
+
 
 @pytest.fixture(scope="module")
 def MOCK_PEALIM_WORD_HTML(fixtures_path: Path) -> str:
     with open(fixtures_path / "2811-bdika.html", "r", encoding="utf-8") as f:
         return f.read()
 
+
 @pytest.fixture(scope="module")
 def MOCK_PEALIM_SEARCH_HTML(fixtures_path: Path) -> str:
     with open(fixtures_path / "search-bdika.html", "r", encoding="utf-8") as f:
         return f.read()
+
 
 @pytest.mark.asyncio
 @patch("services.parser.httpx.AsyncClient")
@@ -38,32 +42,38 @@ async def test_full_search_and_add_scenario(
                 200, text=MOCK_PEALIM_SEARCH_HTML, request=request
             )
         else:
-            response = httpx.Response(
-                200, text=MOCK_PEALIM_WORD_HTML, request=request
-            )
+            response = httpx.Response(200, text=MOCK_PEALIM_WORD_HTML, request=request)
         return response
 
-    mock_async_client.return_value.__aenter__.return_value.get.side_effect = side_effect_get
+    mock_async_client.return_value.__aenter__.return_value.get.side_effect = (
+        side_effect_get
+    )
 
     # --- Часть 1: Поиск нового слова ---
     search_update = Mock()
     search_update.message = AsyncMock()
     search_update.message.text = "בדיקה"
     search_update.message.reply_text.return_value = AsyncMock(message_id=111)
-    type(search_update).effective_user = PropertyMock(return_value=Mock(id=TEST_USER_ID))
-    type(search_update).effective_chat = PropertyMock(return_value=Mock(id=TEST_CHAT_ID))
+    type(search_update).effective_user = PropertyMock(
+        return_value=Mock(id=TEST_USER_ID)
+    )
+    type(search_update).effective_chat = PropertyMock(
+        return_value=Mock(id=TEST_CHAT_ID)
+    )
 
-    with patch("handlers.search.display_word_card", new_callable=AsyncMock) as mock_display_word_card:
+    with patch(
+        "handlers.search.display_word_card", new_callable=AsyncMock
+    ) as mock_display_word_card:
         await handle_text_message(search_update, mock_context)
 
         mock_display_word_card.assert_called_once()
-        
+
         # --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ---
         # Извлекаем данные из позиционных аргументов (args), а не именованных (kwargs).
         # `word_data` - это 4-й по счету аргумент (индекс 3).
         call_args = mock_display_word_card.call_args.args
         word_data = call_args[3]
-        
+
         assert word_data["hebrew"] == unicodedata.normalize("NFD", "בְּדִיקָה")
 
     # --- Часть 2: Добавление слова в личный словарь ---
@@ -80,7 +90,9 @@ async def test_full_search_and_add_scenario(
     type(mock_query).data = PropertyMock(return_value=f"{callback_prefix}:{word_id}")
     type(mock_query).from_user = PropertyMock(return_value=Mock(id=TEST_USER_ID))
 
-    with patch("handlers.search.display_word_card", new_callable=AsyncMock) as mock_display_after_add:
+    with patch(
+        "handlers.search.display_word_card", new_callable=AsyncMock
+    ) as mock_display_after_add:
         await add_word_to_dictionary(add_update, mock_context)
 
         # Здесь мы можем проверить kwargs, так как `in_dictionary` передается как именованный аргумент

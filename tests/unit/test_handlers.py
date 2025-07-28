@@ -4,7 +4,8 @@ from datetime import datetime
 
 # Эти импорты верны, так как они отражают структуру вашего проекта
 from dal.models import CachedWord, Translation
-from handlers.common import start, main_menu
+from handlers.common import start, main_menu, back_to_main_menu, display_word_card
+from telegram.ext import ConversationHandler
 from handlers.dictionary import (
     view_dictionary_page_handler,
     confirm_delete_word,
@@ -27,8 +28,15 @@ from handlers.training import (
     start_verb_trainer,
     end_training,
     check_verb_answer,
+    show_answer,
 )
-from config import CB_EVAL_CORRECT, CB_EVAL_INCORRECT, VERB_TRAINER_RETRY_ATTEMPTS, CB_SEARCH_PEALIM, CB_SELECT_WORD 
+from config import (
+    CB_EVAL_CORRECT,
+    CB_EVAL_INCORRECT,
+    VERB_TRAINER_RETRY_ATTEMPTS,
+    CB_SEARCH_PEALIM,
+    CB_SELECT_WORD,
+)
 
 
 # --- Тесты для общих обработчиков (не требуют патчинга БД) ---
@@ -68,6 +76,124 @@ async def test_main_menu():
     update.callback_query.answer.assert_called_once()
     update.callback_query.edit_message_text.assert_called_once()
     assert "Главное меню" in update.callback_query.edit_message_text.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_back_to_main_menu():
+    """Тест: функция `back_to_main_menu` корректно завершает диалог."""
+    update = AsyncMock()
+    context = MagicMock()
+
+    # Мокаем `main_menu`, чтобы проверить, что она была вызвана
+    with patch("handlers.common.main_menu", new_callable=AsyncMock) as mock_main_menu:
+        result = await back_to_main_menu(update, context)
+
+        # Проверяем, что main_menu была вызвана
+        mock_main_menu.assert_called_once_with(update, context)
+        # Проверяем, что функция вернула маркер завершения диалога
+        assert result == ConversationHandler.END
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "word_data, in_dictionary, message_id, expected_text_parts, expected_buttons",
+    [
+        # --- Сценарий 1: Новое слово (не в словаре), отправка нового сообщения ---
+        (
+            {
+                "word_id": 1,
+                "hebrew": "חדש",
+                "transcription": "chadash",
+                "part_of_speech": "adjective",
+                "translations": [{"translation_text": "new", "is_primary": True}],
+                "masculine_singular": "חדש",
+                "feminine_singular": "חדשה",
+            },
+            False,
+            None,
+            ["Найдено: *חדש*", "ж.р., ед.ч.: חדשה"],
+            ["➕ Добавить", "⬅️ В главное меню"],
+        ),
+        # --- Сценарий 2: Слово уже в словаре, редактирование существующего сообщения ---
+        (
+            {
+                "word_id": 2,
+                "hebrew": "ישן",
+                "transcription": "yashan",
+                "part_of_speech": "noun",
+                "translations": [{"translation_text": "old", "is_primary": True}],
+                "gender": "masculine",
+                "plural_form": "ישנים",
+            },
+            True,
+            12345,
+            ["Слово *ישן* уже в вашем словаре", "Род: Мужской род", "Мн. число: ישנים"],
+            ["🗑️ Удалить", "⬅️ В главное меню"],
+        ),
+        # --- Сценарий 3: Глагол, проверка кнопки "Спряжения" ---
+        (
+            {
+                "word_id": 3,
+                "hebrew": "לכתוב",
+                "transcription": "lichtov",
+                "part_of_speech": "verb",
+                "translations": [{"translation_text": "to write", "is_primary": True}],
+                "root": "כ.ת.ב",
+                "binyan": "pa'al",
+            },
+            False,
+            None,
+            ["Найдено: *לכתוב*", "\nКорень: כ.ת.ב", "\nБиньян: pa'al"],
+            ["➕ Добавить", "📖 Спряжения", "⬅️ В главное меню"],
+        ),
+    ],
+)
+async def test_display_word_card(
+    word_data, in_dictionary, message_id, expected_text_parts, expected_buttons
+):
+    """Тест: универсальная проверка отображения карточки слова."""
+    context = AsyncMock()
+    user_id = 123
+    chat_id = 456
+
+    # Мокаем UnitOfWork только для этой функции, чтобы не мешать другим тестам
+    with patch("handlers.common.UnitOfWork") as mock_uow_class:
+        mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
+        mock_uow_instance.user_dictionary.is_word_in_dictionary.return_value = (
+            in_dictionary
+        )
+
+        await display_word_card(
+            context,
+            user_id,
+            chat_id,
+            word_data,
+            message_id,
+            # Передаем in_dictionary=None, чтобы симулировать реальный вызов,
+            # где этот параметр определяется внутри функции
+            in_dictionary=None,
+        )
+
+    # Проверяем, был ли вызван правильный метод: edit или send
+    if message_id:
+        context.bot.edit_message_text.assert_called_once()
+        context.bot.send_message.assert_not_called()
+        call_kwargs = context.bot.edit_message_text.call_args.kwargs
+    else:
+        context.bot.send_message.assert_called_once()
+        context.bot.edit_message_text.assert_not_called()
+        call_kwargs = context.bot.send_message.call_args.kwargs
+
+    # Проверяем содержимое текста сообщения
+    sent_text = call_kwargs["text"]
+    for part in expected_text_parts:
+        assert part in sent_text
+
+    # Проверяем кнопки
+    sent_buttons = call_kwargs["reply_markup"].inline_keyboard
+    # "Сплющиваем" массив кнопок в один список для удобства проверки
+    sent_button_texts = [btn.text for row in sent_buttons for btn in row]
+    assert sent_button_texts == expected_buttons
 
 
 # --- Тесты для словаря (Dictionary Handlers) ---
@@ -145,6 +271,28 @@ async def test_view_dictionary_page_handler_empty():
     assert (
         "Ваш словарь пуст" in update.callback_query.edit_message_text.call_args.args[0]
     )
+
+
+@pytest.mark.asyncio
+async def test_confirm_delete_word_not_found():
+    """Тест: попытка подтвердить удаление несуществующего слова."""
+    update = AsyncMock()
+    update.callback_query.data = "dict:confirm_delete:999:0"
+    context = MagicMock()
+
+    with patch("handlers.dictionary.UnitOfWork") as mock_uow_class:
+        mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
+        # Мокаем метод так, чтобы он вернул None
+        mock_uow_instance.words.get_word_hebrew_by_id.return_value = None
+
+        await confirm_delete_word(update, context)
+
+        # Проверяем, что был вызван метод для получения слова
+        mock_uow_instance.words.get_word_hebrew_by_id.assert_called_once_with(999)
+        # Проверяем, что пользователю было отправлено сообщение об ошибке
+        update.callback_query.edit_message_text.assert_called_once_with(
+            "Ошибка: слово не найдено."
+        )
 
 
 @pytest.mark.asyncio
@@ -238,13 +386,18 @@ async def test_handle_text_message_no_local_match():
         mock_uow_instance.words.find_words_by_normalized_form.return_value = []
 
         # Мокаем нашу новую функцию-хелпер
-        with patch("handlers.search.search_in_pealim", new_callable=AsyncMock) as mock_search_pealim:
+        with patch(
+            "handlers.search.search_in_pealim", new_callable=AsyncMock
+        ) as mock_search_pealim:
             await handle_text_message(update, context)
 
             # Проверяем, что поиск в БД был выполнен
-            mock_uow_instance.words.find_words_by_normalized_form.assert_called_once_with("חדש")
+            mock_uow_instance.words.find_words_by_normalized_form.assert_called_once_with(
+                "חדש"
+            )
             # Проверяем, что был вызван внешний поиск
             mock_search_pealim.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_handle_text_message_one_local_match():
@@ -262,14 +415,17 @@ async def test_handle_text_message_one_local_match():
         # Новый метод возвращает СПИСОК С ОДНИМ ЭЛЕМЕНТОМ
         mock_uow_instance.words.find_words_by_normalized_form.return_value = [mock_word]
 
-        with patch("handlers.search.display_word_card", new_callable=AsyncMock) as mock_display:
+        with patch(
+            "handlers.search.display_word_card", new_callable=AsyncMock
+        ) as mock_display:
             await handle_text_message(update, context)
 
             mock_display.assert_called_once()
             # Проверяем, что карточка вызвана с параметром для отображения кнопки "Искать еще"
             call_kwargs = mock_display.call_args.kwargs
-            assert call_kwargs['show_pealim_search_button'] is True
-            assert call_kwargs['search_query'] == "שלום"
+            assert call_kwargs["show_pealim_search_button"] is True
+            assert call_kwargs["search_query"] == "שלום"
+
 
 @pytest.mark.asyncio
 async def test_handle_text_message_multiple_local_matches():
@@ -279,13 +435,24 @@ async def test_handle_text_message_multiple_local_matches():
     context = MagicMock()
 
     # Мокаем два разных слова-омонима
-    mock_word1 = MagicMock(word_id=10, hebrew="חָלָב", translations=[MagicMock(translation_text="молоко", is_primary=True)])
-    mock_word2 = MagicMock(word_id=11, hebrew="לַחְלוֹב", translations=[MagicMock(translation_text="доить", is_primary=True)])
+    mock_word1 = MagicMock(
+        word_id=10,
+        hebrew="חָלָב",
+        translations=[MagicMock(translation_text="молоко", is_primary=True)],
+    )
+    mock_word2 = MagicMock(
+        word_id=11,
+        hebrew="לַחְלוֹב",
+        translations=[MagicMock(translation_text="доить", is_primary=True)],
+    )
 
     with patch("handlers.search.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         # Новый метод возвращает СПИСОК С ДВУМЯ ЭЛЕМЕНТАМИ
-        mock_uow_instance.words.find_words_by_normalized_form.return_value = [mock_word1, mock_word2]
+        mock_uow_instance.words.find_words_by_normalized_form.return_value = [
+            mock_word1,
+            mock_word2,
+        ]
 
         await handle_text_message(update, context)
 
@@ -295,8 +462,8 @@ async def test_handle_text_message_multiple_local_matches():
         assert "Найдено несколько вариантов" in call_args[0]
 
         # Проверяем кнопки
-        keyboard = call_kwargs['reply_markup'].inline_keyboard
-        assert len(keyboard) == 3 # Две кнопки для слов + одна для поиска
+        keyboard = call_kwargs["reply_markup"].inline_keyboard
+        assert len(keyboard) == 3  # Две кнопки для слов + одна для поиска
         assert "молоко" in keyboard[0][0].text
         assert f"{CB_SELECT_WORD}:10:חלב" in keyboard[0][0].callback_data
         assert "доить" in keyboard[1][0].text
@@ -304,7 +471,9 @@ async def test_handle_text_message_multiple_local_matches():
         assert "Искать еще в Pealim" in keyboard[2][0].text
         assert f"{CB_SEARCH_PEALIM}:חלב" in keyboard[2][0].callback_data
 
+
 # --- НОВЫЕ ТЕСТЫ ДЛЯ НОВЫХ ОБРАБОТЧИКОВ ---
+
 
 @pytest.mark.asyncio
 async def test_pealim_search_handler():
@@ -313,11 +482,12 @@ async def test_pealim_search_handler():
     update.callback_query.data = f"{CB_SEARCH_PEALIM}:שלום"
     context = MagicMock()
 
-    with patch("handlers.search.search_in_pealim", new_callable=AsyncMock) as mock_search_pealim:
+    with patch(
+        "handlers.search.search_in_pealim", new_callable=AsyncMock
+    ) as mock_search_pealim:
         await pealim_search_handler(update, context)
         # Проверяем, что был вызван внешний поиск с правильным запросом
         mock_search_pealim.assert_called_once_with(update, context, "שלום")
-        
 
 
 @pytest.mark.asyncio
@@ -346,7 +516,7 @@ async def test_search_in_pealim_failures(status, data_list, expected_message):
     update.message = None
     update.callback_query = AsyncMock()
     update.callback_query.message.message_id = 54321
-    
+
     # Создаем мок для chat объекта
     mock_chat = MagicMock()
     mock_chat.id = 12345
@@ -361,30 +531,78 @@ async def test_search_in_pealim_failures(status, data_list, expected_message):
         await search_in_pealim(update, context, "מילה")
 
     # Проверяем, что бот сначала отредактировал сообщение на "Ищу..."
-    assert "🔎 Ищу слово" in context.bot.edit_message_text.call_args_list[0].kwargs['text']
+    assert (
+        "🔎 Ищу слово" in context.bot.edit_message_text.call_args_list[0].kwargs["text"]
+    )
 
     # --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ---
     # Получаем второй (последний) вызов edit_message_text
     final_call = context.bot.edit_message_text.call_args
-    
+
     # Проверяем позиционный аргумент (args[0]), а не именованный (kwargs['text'])
     assert final_call.args[0] == expected_message
-    
+
     # Проверяем остальные параметры
-    assert final_call.kwargs['chat_id'] == 12345
-    assert final_call.kwargs['message_id'] == 54321
+    assert final_call.kwargs["chat_id"] == 12345
+    assert final_call.kwargs["message_id"] == 54321
 
     # Убедимся, что было ровно два вызова (первый - "Ищу...", второй - ошибка)
     assert context.bot.edit_message_text.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_search_in_pealim_success_multiple_results():
+    """Тест: успешный поиск в Pealim, найдено несколько вариантов."""
+    update = AsyncMock()
+    context = AsyncMock()
+    update.message = None
+    update.callback_query = AsyncMock()
+    update.callback_query.message.message_id = 54321
+    mock_chat = MagicMock()
+    mock_chat.id = 12345
+    update.effective_chat = mock_chat
+    update.callback_query.message.chat = mock_chat
+
+    # Мокаем данные, которые вернет fetcher
+    mock_data = [
+        {
+            "word_id": 100,
+            "hebrew": "חָלָב",
+            "translations": [{"translation_text": "молоко"}],
+        },
+        {
+            "word_id": 101,
+            "hebrew": "לַחְלוֹב",
+            "translations": [{"translation_text": "доить"}],
+        },
+    ]
+
+    with patch(
+        "handlers.search.fetch_and_cache_word_data", new_callable=AsyncMock
+    ) as mock_fetch:
+        mock_fetch.return_value = ("ok", mock_data)
+
+        await search_in_pealim(update, context, "חלב")
+
+    # Проверяем финальное сообщение с кнопками
+    final_call = context.bot.edit_message_text.call_args
+    assert "найдено несколько вариантов" in final_call.kwargs["text"]
+    keyboard = final_call.kwargs["reply_markup"].inline_keyboard
+    assert len(keyboard) == 2
+    assert "חָלָב" in keyboard[0][0].text
+    assert f"{CB_SELECT_WORD}:100:חלב" in keyboard[0][0].callback_data
+    assert "לַחְלוֹב" in keyboard[1][0].text
+    assert f"{CB_SELECT_WORD}:101:חלב" in keyboard[1][0].callback_data
+
 
 @pytest.mark.asyncio
 async def test_select_word_handler():
     """Тест: обработчик выбора слова из списка."""
     update = AsyncMock()
-    update.callback_query.data = f"{CB_SELECT_WORD}:10:חלב" # Выбираем слово с ID 10
+    update.callback_query.data = f"{CB_SELECT_WORD}:10:חלב"  # Выбираем слово с ID 10
     update.callback_query.from_user.id = 123
     context = MagicMock()
-    
+
     mock_word_data = MagicMock()
     mock_word_data.model_dump.return_value = {"word_id": 10, "hebrew": "חָלָב"}
 
@@ -392,18 +610,85 @@ async def test_select_word_handler():
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.get_word_by_id.return_value = mock_word_data
 
-        with patch("handlers.search.display_word_card", new_callable=AsyncMock) as mock_display:
+        with patch(
+            "handlers.search.display_word_card", new_callable=AsyncMock
+        ) as mock_display:
             await select_word_handler(update, context)
 
             # Проверяем, что запросили из БД слово с правильным ID
             mock_uow_instance.words.get_word_by_id.assert_called_once_with(10)
-            
+
             # Проверяем, что была вызвана карточка
             mock_display.assert_called_once()
             call_kwargs = mock_display.call_args.kwargs
             # И что у нее тоже есть кнопка для повторного поиска
-            assert call_kwargs['show_pealim_search_button'] is True
-            assert call_kwargs['search_query'] == "חלב"
+            assert call_kwargs["show_pealim_search_button"] is True
+            assert call_kwargs["search_query"] == "חלב"
+
+
+@pytest.mark.asyncio
+async def test_select_word_handler_word_not_found():
+    """Тест: обработчик выбора слова, если слово не найдено в БД."""
+    update = AsyncMock()
+    update.callback_query.data = f"{CB_SELECT_WORD}:999:test"
+    context = MagicMock()
+
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
+        mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
+        mock_uow_instance.words.get_word_by_id.return_value = None
+
+        await select_word_handler(update, context)
+
+        update.callback_query.edit_message_text.assert_called_once_with(
+            "Ошибка: не удалось найти выбранное слово."
+        )
+
+
+@pytest.mark.asyncio
+async def test_add_word_to_dictionary_word_not_found():
+    """Тест: попытка добавить в словарь несуществующее слово."""
+    update = AsyncMock()
+    update.callback_query.data = "add:word:999"
+    update.callback_query.from_user.id = 123
+    context = MagicMock()
+
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
+        mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
+        # Мокаем так, чтобы слово не нашлось
+        mock_uow_instance.words.get_word_by_id.return_value = None
+
+        await add_word_to_dictionary(update, context)
+
+        # Проверяем, что была попытка добавить слово
+        mock_uow_instance.user_dictionary.add_word_to_dictionary.assert_called_once_with(
+            123, 999
+        )
+        # Проверяем, что не было попытки отобразить карточку
+        # (так как display_word_card не была вызвана)
+        context.bot.edit_message_textю.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_view_word_card_handler_not_found():
+    """Тест: возврат к карточке слова, если слово не найдено."""
+    update = AsyncMock()
+    update.callback_query.data = "view:card:999"
+    context = MagicMock()
+
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
+        mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
+        mock_uow_instance.words.get_word_by_id.return_value = None
+
+        # Импортируем `view_word_card_handler` здесь, чтобы избежать циклических зависимостей
+        from handlers.search import view_word_card_handler
+
+        await view_word_card_handler(update, context)
+
+        update.callback_query.edit_message_text.assert_called_once()
+        assert (
+            "Ошибка: слово не найдено"
+            in update.callback_query.edit_message_text.call_args.args[0]
+        )
 
 
 # --- Тесты для тренировок (Training Handlers) ---
@@ -486,9 +771,9 @@ async def test_handle_text_message_word_in_db():
 
     with patch("handlers.search.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
-        mock_uow_instance.words.find_words_by_normalized_form.return_value = (
-            [mock_word_data]
-        )
+        mock_uow_instance.words.find_words_by_normalized_form.return_value = [
+            mock_word_data
+        ]
 
         with patch("handlers.search.display_word_card") as mock_display:
             await handle_text_message(update, context)
@@ -497,6 +782,7 @@ async def test_handle_text_message_word_in_db():
                 "שלום"
             )
             mock_display.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_handle_text_message_no_local_match_triggers_pealim_search():
@@ -511,9 +797,11 @@ async def test_handle_text_message_no_local_match_triggers_pealim_search():
         mock_uow_instance.words.find_words_by_normalized_form.return_value = []
 
         # 2. Мокаем хелпер, а не сам fetch_and_cache
-        with patch("handlers.search.search_in_pealim", new_callable=AsyncMock) as mock_search_helper:
+        with patch(
+            "handlers.search.search_in_pealim", new_callable=AsyncMock
+        ) as mock_search_helper:
             await handle_text_message(update, context)
-            
+
             # 3. Проверяем, что хелпер был вызван
             mock_search_helper.assert_called_once_with(update, context, "חדש")
 
@@ -640,6 +928,26 @@ async def test_show_next_card_ends_training():
         in update.callback_query.edit_message_text.call_args.args[0]
     )
     assert context.user_data == {}  # Проверяем, что данные были очищены
+
+
+@pytest.mark.asyncio
+async def test_show_answer():
+    """Тест: функция `show_answer` корректно отображает ответ."""
+    update = AsyncMock()
+    context = MagicMock()
+    mock_word = MagicMock()
+    mock_word.hebrew = "שלום"
+    mock_word.transcription = "shalom"
+    mock_word.translations = [MagicMock(translation_text="привет")]
+    context.user_data = {"words": [mock_word], "idx": 0}
+
+    await show_answer(update, context)
+
+    update.callback_query.edit_message_text.assert_called_once()
+    call_args, call_kwargs = update.callback_query.edit_message_text.call_args
+    assert "שלום" in call_args[0]
+    assert "shalom" in call_args[0]
+    assert "привет" in call_args[0]
 
 
 @pytest.mark.asyncio
