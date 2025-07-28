@@ -28,8 +28,8 @@ def test_word_repository(memory_db):
     ]
     conjugations = [
         {
-            "tense": "present",
-            "person": "m.s.",
+            "tense": "ap",
+            "person": "ms",
             "hebrew_form": "כּוֹתֵב",
             "normalized_hebrew_form": "כותב",
             "transcription": "kotev",

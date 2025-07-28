@@ -16,6 +16,7 @@ from config import (
     CB_SEARCH_PEALIM,
 )
 from dal.unit_of_work import UnitOfWork
+from dal.models import CachedWord
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -52,7 +53,7 @@ async def display_word_card(
     context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
     chat_id: int,
-    word_data: dict,
+    word_data: CachedWord,
     message_id: Optional[int] = None,
     in_dictionary: Optional[bool] = None,
     show_pealim_search_button: bool = False,
@@ -64,59 +65,59 @@ async def display_word_card(
     """
     logger.info(f"-> display_word_card: Получены данные для карточки: {word_data}")
 
-    word_id = word_data["word_id"]
+    word_id = word_data.word_id
 
     if in_dictionary is None:
         with UnitOfWork() as uow:
             in_dictionary = uow.user_dictionary.is_word_in_dictionary(user_id, word_id)
 
-    translations = word_data.get("translations", [])
+    translations = word_data.translations
     primary_translation = next(
-        (t.get("translation_text") for t in translations if t.get("is_primary")),
+        (t.translation_text for t in translations if t.is_primary),
         "Перевод не найден",
     )
-    other_translations = [
-        t.get("translation_text") for t in translations if not t.get("is_primary")
-    ]
+    other_translations = [t.translation_text for t in translations if not t.is_primary]
 
     translation_str = primary_translation
     if other_translations:
         translation_str += f" (также: {', '.join(other_translations)})"
 
     card_text_header = (
-        f"Слово *{word_data['hebrew']}* уже в вашем словаре."
+        f"Слово *{word_data.hebrew}* уже в вашем словаре."
         if in_dictionary
-        else f"Найдено: *{word_data['hebrew']}*"
+        else f"Найдено: *{word_data.hebrew}*"
     )
-    card_text = f"{card_text_header} [{word_data.get('transcription', '')}]\nПеревод: {translation_str}\n"
+    card_text = (
+        f"{card_text_header} [{word_data.transcription}]\nПеревод: {translation_str}\n"
+    )
 
     # --- НОВАЯ ЛОГИКА ОТОБРАЖЕНИЯ ДАННЫХ ---
-    pos = word_data.get("part_of_speech")
+    pos = word_data.part_of_speech
     if pos == "verb":
-        if word_data.get("root"):
-            card_text += f"\nКорень: {word_data['root']}"
-        if word_data.get("binyan"):
-            card_text += f"\nБиньян: {word_data['binyan']}"
+        if word_data.root:
+            card_text += f"\nКорень: {word_data.root}"
+        if word_data.binyan:
+            card_text += f"\nБиньян: {word_data.binyan}"
     elif pos == "noun":
-        if word_data.get("gender"):
+        if word_data.gender:
             gender_display = (
-                "Мужской род" if word_data["gender"] == "masculine" else "Женский род"
+                "Мужской род" if word_data.gender == "masculine" else "Женский род"
             )
             card_text += f"\nРод: {gender_display}"
-        if word_data.get("singular_form"):
-            card_text += f"\nЕд. число: {word_data['singular_form']}"
-        if word_data.get("plural_form"):
-            card_text += f"\nМн. число: {word_data['plural_form']}"
+        if word_data.singular_form:
+            card_text += f"\nЕд. число: {word_data.singular_form}"
+        if word_data.plural_form:
+            card_text += f"\nМн. число: {word_data.plural_form}"
     elif pos == "adjective":
         card_text += "\n*Формы:*"
-        if word_data.get("masculine_singular"):
-            card_text += f"\nм.р., ед.ч.: {word_data['masculine_singular']}"
-        if word_data.get("feminine_singular"):
-            card_text += f"\nж.р., ед.ч.: {word_data['feminine_singular']}"
-        if word_data.get("masculine_plural"):
-            card_text += f"\nм.р., мн.ч.: {word_data['masculine_plural']}"
-        if word_data.get("feminine_plural"):
-            card_text += f"\nж.р., мн.ч.: {word_data['feminine_plural']}"
+        if word_data.masculine_singular:
+            card_text += f"\nм.р., ед.ч.: {word_data.masculine_singular}"
+        if word_data.feminine_singular:
+            card_text += f"\nж.р., ед.ч.: {word_data.feminine_singular}"
+        if word_data.masculine_plural:
+            card_text += f"\nм.р., мн.ч.: {word_data.masculine_plural}"
+        if word_data.feminine_plural:
+            card_text += f"\nж.р., мн.ч.: {word_data.feminine_plural}"
 
     card_text = card_text.strip()
     # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
@@ -136,7 +137,7 @@ async def display_word_card(
         )
 
     # *** ИЗМЕНЕНА ПРОВЕРКА ***
-    if word_data.get("part_of_speech") == "verb":
+    if word_data.part_of_speech == "verb":
         action_buttons.append(
             InlineKeyboardButton(
                 "📖 Спряжения", callback_data=f"{CB_SHOW_VERB}:{word_id}"

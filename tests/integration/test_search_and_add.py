@@ -74,7 +74,7 @@ async def test_full_search_and_add_scenario(
         call_args = mock_display_word_card.call_args.args
         word_data = call_args[3]
 
-        assert word_data["hebrew"] == unicodedata.normalize("NFD", "בְּדִיקָה")
+        assert word_data.hebrew == unicodedata.normalize("NFD", "בְּדִיקָה")
 
     # --- Часть 2: Добавление слова в личный словарь ---
     with UnitOfWork() as uow:

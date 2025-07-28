@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime
 
 # Эти импорты верны, так как они отражают структуру вашего проекта
-from dal.models import CachedWord, Translation
+from dal.models import CachedWord, Translation, VerbConjugation
 from handlers.common import start, main_menu, back_to_main_menu, display_word_card
 from telegram.ext import ConversationHandler
 from handlers.dictionary import (
@@ -103,11 +103,20 @@ async def test_back_to_main_menu():
             {
                 "word_id": 1,
                 "hebrew": "חדש",
+                "normalized_hebrew": "חדש",
                 "transcription": "chadash",
                 "part_of_speech": "adjective",
-                "translations": [{"translation_text": "new", "is_primary": True}],
+                "translations": [
+                    {
+                        "translation_id": 1,
+                        "translation_text": "new",
+                        "is_primary": True,
+                        "word_id": 1,
+                    }
+                ],
                 "masculine_singular": "חדש",
                 "feminine_singular": "חדשה",
+                "fetched_at": datetime.now(),
             },
             False,
             None,
@@ -119,11 +128,20 @@ async def test_back_to_main_menu():
             {
                 "word_id": 2,
                 "hebrew": "ישן",
+                "normalized_hebrew": "ישן",
                 "transcription": "yashan",
                 "part_of_speech": "noun",
-                "translations": [{"translation_text": "old", "is_primary": True}],
+                "translations": [
+                    {
+                        "translation_id": 1,
+                        "translation_text": "old",
+                        "is_primary": True,
+                        "word_id": 2,
+                    }
+                ],
                 "gender": "masculine",
                 "plural_form": "ישנים",
+                "fetched_at": datetime.now(),
             },
             True,
             12345,
@@ -135,11 +153,20 @@ async def test_back_to_main_menu():
             {
                 "word_id": 3,
                 "hebrew": "לכתוב",
+                "normalized_hebrew": "לכתוב",
                 "transcription": "lichtov",
                 "part_of_speech": "verb",
-                "translations": [{"translation_text": "to write", "is_primary": True}],
+                "translations": [
+                    {
+                        "translation_id": 1,
+                        "translation_text": "to write",
+                        "is_primary": True,
+                        "word_id": 3,
+                    }
+                ],
                 "root": "כ.ת.ב",
                 "binyan": "pa'al",
+                "fetched_at": datetime.now(),
             },
             False,
             None,
@@ -167,7 +194,7 @@ async def test_display_word_card(
             context,
             user_id,
             chat_id,
-            word_data,
+            CachedWord(**word_data),
             message_id,
             # Передаем in_dictionary=None, чтобы симулировать реальный вызов,
             # где этот параметр определяется внутри функции
@@ -568,14 +595,34 @@ async def test_search_in_pealim_success_multiple_results():
         {
             "word_id": 100,
             "hebrew": "חָלָב",
-            "translations": [{"translation_text": "молоко"}],
+            "normalized_hebrew": "חָלָב",
+            "translations": [
+                {
+                    "translation_text": "молоко",
+                    "translation_id": 1,
+                    "word_id": 100,
+                    "is_primary": True,
+                }
+            ],
+            "fetched_at": datetime.now(),
         },
         {
             "word_id": 101,
             "hebrew": "לַחְלוֹב",
-            "translations": [{"translation_text": "доить"}],
+            "normalized_hebrew": "חָלָב",
+            "translations": [
+                {
+                    "translation_text": "доить",
+                    "translation_id": 2,
+                    "word_id": 100,
+                    "is_primary": True,
+                }
+            ],
+            "fetched_at": datetime.now(),
         },
     ]
+
+    mock_data = [CachedWord(**word) for word in mock_data]
 
     with patch(
         "handlers.search.fetch_and_cache_word_data", new_callable=AsyncMock
@@ -815,9 +862,12 @@ async def test_show_verb_conjugations_success():
     word_id = 1
 
     mock_conjugations = [
-        MagicMock(
-            tense="PAST",
-            person="1st singular",
+        VerbConjugation(
+            id=1,
+            word_id=word_id,
+            normalized_hebrew_form="",
+            tense="perf",
+            person="1s",
             hebrew_form="אני הייתי",
             transcription="ani hayiti",
         )
@@ -840,8 +890,9 @@ async def test_show_verb_conjugations_success():
 
         call_args, call_kwargs = update.callback_query.edit_message_text.call_args
         assert "Спряжения для *להיות*" in call_args[0]
-        assert "*Past*:" in call_args[0]
-        assert "_1st singular_: אני הייתי (ani hayiti)" in call_args[0]
+        assert "Прошедшее" in call_args[0]
+        assert "אני הייתי (ani hayiti)" in call_args[0]
+        assert "1 л., ед.ч. (я)" in call_args[0]
 
 
 @pytest.mark.asyncio

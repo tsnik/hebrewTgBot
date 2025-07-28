@@ -183,13 +183,6 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
         logger.info("--> parse_verb_page: Поиск спряжений...")
         conjugations = []
         verb_forms = soup.find_all("div", id=re.compile(r"^(AP|PERF|IMPF|IMP|INF)-"))
-        tense_map = {
-            "AP": "настоящее",
-            "PERF": "прошедшее",
-            "IMPF": "будущее",
-            "IMP": "повелительное",
-            "INF": "инфинитив",
-        }
         for form in verb_forms:
             form_id, menukad_tag, trans_tag = (
                 form.get("id"),
@@ -197,13 +190,13 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
                 form.find("div", class_="transcription"),
             )
             if all([form_id, menukad_tag, trans_tag]):
-                tense_prefix = form_id.split("-")[0]
+                tense_prefix = form_id.split("-")[0].lower()
                 person = (
                     form_id.split("-")[1] if len(form_id.split("-")) > 1 else "форма"
                 )
                 conjugations.append(
                     {
-                        "tense": tense_map.get(tense_prefix),
+                        "tense": tense_prefix,
                         "person": person,
                         "hebrew_form": menukad_tag.text.strip(),
                         "transcription": trans_tag.text.strip(),
@@ -428,7 +421,7 @@ async def fetch_and_cache_word_data(
                     normalized_search_word
                 )
             if len(results) > 0:
-                return "ok", [result.model_dump() for result in results]
+                return "ok", results
             return "not_found", None
         except asyncio.TimeoutError:
             logger.warning(f"Таймаут ожидания для '{search_word}'.")
@@ -484,9 +477,9 @@ async def fetch_and_cache_word_data(
                     word_data["normalized_hebrew"], True
                 )
                 if result:
-                    final_words_data.append(result.model_dump())
+                    final_words_data.append(result)
                     logger.info(
-                        f"Шаг 5.x: Слово {word_data['normalized_hebrew']} успешно найдено в БД."
+                        f"Шаг 5.x: Слово {result.normalized_hebrew} успешно найдено в БД."
                     )
         logger.info(final_words_data)
         return "ok", final_words_data

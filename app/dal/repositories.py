@@ -153,6 +153,9 @@ class WordRepository(BaseRepository):
             **kwargs,
         }
 
+        # validation
+        CachedWord(word_id=-1, **word_data)
+
         # Remove is_verb if it exists in kwargs to avoid column error
         word_data.pop("is_verb", None)
 
@@ -175,6 +178,7 @@ class WordRepository(BaseRepository):
                 )
                 for t in translations
             ]
+            [Translation(**t, word_id=word_id, translation_id=-1) for t in translations]
             translations_query = "INSERT INTO translations (word_id, translation_text, context_comment, is_primary) VALUES (?, ?, ?, ?)"
             cursor.executemany(translations_query, translations_to_insert)
 
@@ -190,6 +194,7 @@ class WordRepository(BaseRepository):
                 )
                 for c in conjugations
             ]
+            [VerbConjugation(**c, word_id=word_id, id=-1) for c in conjugations]
             conjugations_query = "INSERT INTO verb_conjugations (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription) VALUES (?, ?, ?, ?, ?, ?)"
             cursor.executemany(conjugations_query, conjugations_to_insert)
 
