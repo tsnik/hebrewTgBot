@@ -1218,12 +1218,27 @@ async def test_start_verb_trainer_happy_path():
         fetched_at=datetime.now(),
     )
 
+    mock_empty_user_settings = UserSettings(user_id=123)
+    mock_good_user_settings = UserSettings(
+        user_id=123,
+        tense_settings=[
+            UserTenseSetting(user_id=123, tense=Tense.PAST, is_active=True),
+            UserTenseSetting(user_id=123, tense=Tense.PRESENT, is_active=True),
+            UserTenseSetting(user_id=123, tense=Tense.FUTURE, is_active=True),
+            UserTenseSetting(user_id=123, tense=Tense.IMPERATIVE, is_active=False),
+        ],
+    )
+
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.get_random_verb_for_training.return_value = mock_verb
         mock_uow_instance.words.get_random_conjugation_for_word.return_value = (
             mock_conjugation
         )
+        mock_uow_instance.user_settings.get_user_settings.side_effect = [
+            mock_empty_user_settings,
+            mock_good_user_settings,
+        ]
 
         await start_verb_trainer(update, context)
 
