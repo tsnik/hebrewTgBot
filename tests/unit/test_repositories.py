@@ -2,6 +2,7 @@ import pytest
 import sqlite3
 
 from dal.repositories import WordRepository, UserDictionaryRepository
+from dal.unit_of_work import UnitOfWork
 
 # It's good practice to enable foreign key constraints for tests to ensure data integrity
 DB_PRAGMA = "PRAGMA foreign_keys = ON;"
@@ -301,8 +302,8 @@ def test_word_repository_transaction_rollback(memory_db):
 
     # **THE FIX:** Use 'with connection' to ensure the transaction is rolled back on error.
     with pytest.raises(TypeError):
-        with connection:
-            repo.create_cached_word(
+        with UnitOfWork() as uow:
+            uow.words.create_cached_word(
                 hebrew="לְהִכָּשֵׁל",
                 normalized_hebrew="להכשל",
                 transcription="lehikashel",
