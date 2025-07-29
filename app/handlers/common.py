@@ -14,6 +14,7 @@ from config import (
     CB_DICT_CONFIRM_DELETE,
     CB_SHOW_VERB,
     CB_SEARCH_PEALIM,
+    CB_SETTINGS_MENU,
     BINYAN_MAP,
 )
 from dal.unit_of_work import UnitOfWork
@@ -30,6 +31,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🧠 Мой словарь", callback_data=f"{CB_DICT_VIEW}:0")],
         [InlineKeyboardButton("💪 Тренировка", callback_data=CB_TRAIN_MENU)],
+        [InlineKeyboardButton("⚙️ Настройки", callback_data=CB_SETTINGS_MENU)],
     ]
     await update.message.reply_text(
         f"Привет, {user.first_name}! Отправь мне слово на иврите для поиска.",
@@ -44,6 +46,7 @@ async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🧠 Мой словарь", callback_data=f"{CB_DICT_VIEW}:0")],
         [InlineKeyboardButton("💪 Тренировка", callback_data=CB_TRAIN_MENU)],
+        [InlineKeyboardButton("⚙️ Настройки", callback_data=CB_SETTINGS_MENU)],
     ]
     await query.edit_message_text(
         "Главное меню:", reply_markup=InlineKeyboardMarkup(keyboard)

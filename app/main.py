@@ -37,6 +37,9 @@ from config import (
     CB_END_TRAINING,
     CB_SEARCH_PEALIM,
     CB_SELECT_WORD,
+    CB_SETTINGS_MENU,
+    CB_TENSES_MENU,
+    CB_TENSE_TOGGLE,
 )
 
 # Импортируем обработчики
@@ -62,6 +65,12 @@ from handlers.training import (
     start_verb_trainer,
     check_verb_answer,
     end_training,
+)
+
+from handlers.settings import (
+    settings_menu,
+    toggle_tense,
+    manage_tenses_menu,
 )
 
 
@@ -158,6 +167,17 @@ def main() -> None:
 
     application.add_handler(
         CallbackQueryHandler(select_word_handler, pattern=f"^{CB_SELECT_WORD}:")
+    )
+
+    # Обработчики настроек
+    application.add_handler(
+        CallbackQueryHandler(settings_menu, pattern=f"^{CB_SETTINGS_MENU}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(manage_tenses_menu, pattern=f"^{CB_TENSES_MENU}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(toggle_tense, pattern=f"^{CB_TENSE_TOGGLE}:")
     )
 
     application.add_handler(training_conv)

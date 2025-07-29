@@ -4,7 +4,14 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 import sqlite3
 
-from dal.models import CachedWord, Translation, VerbConjugation
+from dal.models import (
+    CachedWord,
+    Translation,
+    VerbConjugation,
+    UserSettings,
+    UserTenseSetting,
+    Tense,
+)
 
 
 class BaseRepository:
@@ -280,3 +287,43 @@ class UserDictionaryRepository(BaseRepository):
         query = "UPDATE user_dictionary SET srs_level = ?, next_review_at = ? WHERE user_id = ? AND word_id = ?"
         cursor = self.connection.cursor()
         cursor.execute(query, (srs_level, next_review_at, user_id, word_id))
+
+
+class UserSettingsRepository(BaseRepository):
+    def get_user_settings(self, user_id: int) -> UserSettings:
+        # 1. Получаем все настройки времен из БД
+        query = "SELECT tense, is_active FROM user_tense_settings WHERE user_id = ?"
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id,))
+        rows = cursor.fetchall()
+
+        tense_settings_list = [
+            UserTenseSetting(
+                user_id=user_id, tense=row["tense"], is_active=bool(row["is_active"])
+            )
+            for row in rows
+        ]
+
+        if len(tense_settings_list) == 0:
+            tense_settings_list = None
+
+        # 2. Создаем и возвращаем единый объект UserSettings
+        return UserSettings(user_id=user_id, tense_settings=tense_settings_list)
+
+    def initialize_tense_settings(self, user_id: int):
+        """Создает набор настроек по умолчанию для пользователя."""
+        default_settings = [
+            (user_id, "perf", True),
+            (user_id, "ap", True),
+            (user_id, "impf", True),
+            (user_id, "imp", True),
+        ]
+        query = "INSERT OR IGNORE INTO user_tense_settings (user_id, tense, is_active) VALUES (?, ?, ?)"
+        cursor = self.connection.cursor()
+        cursor.executemany(query, default_settings)
+
+    def toggle_tense_setting(self, user_id: int, tense: Tense):  # Принимаем Enum
+        """Переключает статус (активно/неактивно) для указанного времени."""
+        query = "UPDATE user_tense_settings SET is_active = NOT is_active WHERE user_id = ? AND tense = ?"
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, tense.value))  # Используем .value для SQL
