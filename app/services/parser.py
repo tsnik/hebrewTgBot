@@ -483,6 +483,7 @@ async def fetch_and_cache_word_data(
                 for w in words:
                     if w.hebrew == word_data["hebrew"]:
                         word = w
+                        word_data["word_id"] = w.word_id
                         break
                 if word is None:
                     word_data["word_id"] = uow.words.create_cached_word(**word_data)

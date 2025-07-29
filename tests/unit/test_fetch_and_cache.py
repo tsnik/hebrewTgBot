@@ -6,6 +6,8 @@ import asyncio
 
 from services.parser import fetch_and_cache_word_data, PARSING_EVENTS
 from utils import normalize_hebrew
+from dal.models import CachedWord
+from datetime import datetime
 
 
 @pytest.mark.asyncio
@@ -22,8 +24,12 @@ async def test_fetch_and_cache_word_data_search_hit(monkeypatch):
     respx.get(dict_url).mock(return_value=httpx.Response(200, text=verb_html_fixture()))
 
     mock_uow = MagicMock()
-    mock_word = MagicMock()
-    mock_word.hebrew = final_word
+    mock_word = CachedWord(
+        word_id=10,
+        hebrew=final_word,
+        normalized_hebrew=final_word,
+        fetched_at=datetime.now(),
+    )
 
     # First call to find_word_by_normalized_form returns None, second call returns the mock_word
     mock_uow.__enter__().words.find_word_by_normalized_form.return_value = None
@@ -37,6 +43,43 @@ async def test_fetch_and_cache_word_data_search_hit(monkeypatch):
     assert len(data) > 0
     assert data[0].hebrew == final_word
     mock_uow.__enter__().words.create_cached_word.assert_called_once()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetch_and_cache_word_data_search_hit_word_already_in_cache(monkeypatch):
+    search_word = "כותב"
+    final_word = "לִכְתּוֹב"
+    search_url = f"https://www.pealim.com/ru/search/?q={search_word}"
+    dict_url = "https://www.pealim.com/ru/dict/1/"
+
+    search_html = f"<html><body><div class='verb-search-lemma'><a href='{dict_url}'></a></div></body></html>"
+
+    respx.get(search_url).mock(return_value=httpx.Response(200, text=search_html))
+    respx.get(dict_url).mock(return_value=httpx.Response(200, text=verb_html_fixture()))
+
+    mock_uow = MagicMock()
+    mock_word = CachedWord(
+        word_id=10,
+        hebrew=final_word,
+        normalized_hebrew=final_word,
+        fetched_at=datetime.now(),
+    )
+
+    # First call to find_word_by_normalized_form returns None, second call returns the mock_word
+    mock_uow.__enter__().words.find_word_by_normalized_form.return_value = None
+    mock_uow.__enter__().words.find_words_by_normalized_form.return_value = [mock_word]
+    mock_uow.__enter__().words.create_cached_word.return_value = 1
+    mock_uow.__enter__().words.get_word_by_id.return_value = mock_word
+
+    monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
+
+    status, data = await fetch_and_cache_word_data(search_word)
+
+    assert status == "ok"
+    assert len(data) > 0
+    assert data[0].hebrew == final_word
+    mock_uow.__enter__().words.create_cached_word.assert_not_called()
 
 
 @pytest.mark.asyncio
