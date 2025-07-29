@@ -45,7 +45,7 @@ def test_word_repository(memory_db):
             transcription="likhtov",
             is_verb=True,
             root="כ-ת-ב",
-            binyan="פעל",
+            binyan="paal",
             translations=translations,
             conjugations=conjugations,
         )
@@ -83,7 +83,7 @@ def test_srs_level_management(memory_db):
             transcription="letargel",
             is_verb=True,
             root="ת-ר-ג-ל",
-            binyan="פיעל",
+            binyan="piel",
             translations=translations,
             conjugations=[],
         )
@@ -130,7 +130,7 @@ def test_get_user_words_for_training(memory_db):
             transcription="likro",
             is_verb=True,
             root="ק-ר-א",
-            binyan="פעל",
+            binyan="paal",
             translations=translations_verb,
             conjugations=[],
         )
@@ -161,7 +161,7 @@ def test_get_random_verb_for_training(memory_db):
             transcription="lilmod",
             is_verb=True,
             root="ל-מ-ד",
-            binyan="פעל",
+            binyan="paal",
             translations=translations,
             conjugations=[],
         )
@@ -218,7 +218,7 @@ def test_get_word_by_id(memory_db):
             transcription="livdok",
             is_verb=True,
             root="ב-ד-ק",
-            binyan="פעל",
+            binyan="paal",
             translations=translations,
             conjugations=[],
         )
@@ -309,7 +309,7 @@ def test_word_repository_transaction_rollback(memory_db):
                 transcription="lehikashel",
                 is_verb=True,
                 root="כ-ש-ל",
-                binyan="נפעל",
+                binyan="nifal",
                 translations=translations,
                 conjugations=invalid_conjugations,
             )

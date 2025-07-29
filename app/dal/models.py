@@ -44,6 +44,16 @@ class Person(str, Enum):
     L = "L"
 
 
+class Binyan(str, Enum):
+    PAAL = "paal"
+    PIEL = "piel"
+    NIFAL = "nifal"
+    HIFIL = "hifil"
+    HITPAEL = "hitpael"
+    PUAL = "pual"
+    HUFAL = "hufal"
+
+
 class Translation(BaseModel):
     translation_id: int
     word_id: int
@@ -69,7 +79,7 @@ class CachedWord(BaseModel):
     transcription: Optional[str] = None
     part_of_speech: Optional[PartOfSpeech] = None
     root: Optional[str] = None
-    binyan: Optional[str] = None
+    binyan: Optional[Binyan] = None
     fetched_at: datetime
     translations: List[Translation] = []
     conjugations: List[VerbConjugation] = []
