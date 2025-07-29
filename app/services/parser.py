@@ -18,6 +18,17 @@ PARSING_EVENTS: Dict[str, asyncio.Event] = {}
 PARSING_EVENTS_LOCK = asyncio.Lock()
 
 
+BINYAN_HTML_MAP = {
+    "пааль": "paal",
+    "пиэль": "piel",
+    "hифъиль": "hifil",
+    "нифъаль": "nifal",
+    "hитпаэль": "hitpael",
+    "hифъаль": "hufal",
+    "пуаль": "pual",
+}
+
+
 def _extract_form_value(cell: Tag) -> str:
     """Извлекает иврит и транскрипцию из ячейки таблицы."""
     menukad = cell.find(class_="menukad")
@@ -174,6 +185,9 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
                     p.text.replace("Verb –", "").replace("Глагол –", "").strip()
                 )
                 data["binyan"] = binyan_text.split()[0] if binyan_text else None
+                data["binyan"] = BINYAN_HTML_MAP.get(
+                    data["binyan"].lower(), data["binyan"]
+                )
 
             if "root" in text_lower or "корень" in text_lower:
                 root_tag = p.find("span", class_="menukad")
@@ -462,26 +476,28 @@ async def fetch_and_cache_word_data(
 
         with UnitOfWork() as uow:
             for word_data in parsed_data_list:
-                word = uow.words.find_word_by_normalized_form(
-                    word_data["normalized_hebrew"], True
+                words = uow.words.find_words_by_normalized_form(
+                    word_data["normalized_hebrew"]
                 )
+                word = None
+                for w in words:
+                    if w.hebrew == word_data["hebrew"]:
+                        word = w
+                        word_data["word_id"] = w.word_id
+                        break
                 if word is None:
-                    uow.words.create_cached_word(**word_data)
-            uow.commit()
+                    word_data["word_id"] = uow.words.create_cached_word(**word_data)
 
         logger.info("Шаг 5: Ожидание появления слов в БД и возврат результата...")
         final_words_data = []
         with UnitOfWork() as uow:
             for word_data in parsed_data_list:
-                result = uow.words.find_word_by_normalized_form(
-                    word_data["normalized_hebrew"], True
-                )
+                result = uow.words.get_word_by_id(word_data["word_id"])
                 if result:
                     final_words_data.append(result)
                     logger.info(
                         f"Шаг 5.x: Слово {result.normalized_hebrew} успешно найдено в БД."
                     )
-        logger.info(final_words_data)
         return "ok", final_words_data
 
     except Exception as e:

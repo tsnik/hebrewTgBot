@@ -33,6 +33,30 @@ def verb_piel_html(fixtures_path: Path) -> str:
 
 
 @pytest.fixture(scope="module")
+def verb_hifil_html(fixtures_path: Path) -> str:
+    """Фикстура для глагола hИФЪИЛЬ (lehargish)."""
+    # Используем предоставленный файл 1993-lehargish.html
+    with open(fixtures_path / "1993-lehargish.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="module")
+def verb_nifal_html(fixtures_path: Path) -> str:
+    """Фикстура для глагола НИФЪАЛЬ (lehipagesh)."""
+    # Используем предоставленный файл 1593-lehipagesh.html
+    with open(fixtures_path / "1593-lehipagesh.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="module")
+def verb_hitpael_html(fixtures_path: Path) -> str:
+    """Фикстура для глагола hИТПАЭЛЬ (lehitpalel)."""
+    # Используем предоставленный файл 2435-lehitpael.html
+    with open(fixtures_path / "2435-lehitpael.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="module")
 def noun_masculine_html(fixtures_path: Path) -> str:
     """Фикстура для существительного мужского рода (kelev)."""
     with open(fixtures_path / "3483-kelev.html", "r", encoding="utf-8") as f:
@@ -67,7 +91,7 @@ def test_parse_verb_paal(verb_paal_html: str):
     assert parsed_data["hebrew"] == unicodedata.normalize("NFD", "לִכְתֹּב")
     assert parsed_data["transcription"] == "лихтов"
     assert parsed_data["root"] == "כ - ת - ב"
-    assert parsed_data["binyan"] == "ПААЛЬ"
+    assert parsed_data["binyan"] == "paal"
     assert parsed_data["translations"][0]["translation_text"] == "писать"
     assert len(parsed_data["conjugations"]) > 1
 
@@ -81,8 +105,59 @@ def test_parse_verb_piel(verb_piel_html: str):
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "verb"
     assert parsed_data["hebrew"] == unicodedata.normalize("NFD", "לְדַבֵּר")
-    assert parsed_data["binyan"] == "ПИЭЛЬ"
+    assert parsed_data["binyan"] == "piel"
     assert parsed_data["root"] == "ד - ב - ר"
+    assert len(parsed_data["conjugations"]) > 1
+
+
+def test_parse_verb_hifil(verb_hifil_html: str):
+    """Тестирует парсинг страницы глагола (hИФЪИЛЬ)."""
+    soup = BeautifulSoup(verb_hifil_html, "html.parser")
+    main_header = soup.find("h2", class_="page-header")
+    parsed_data = parse_verb_page(soup, main_header)
+
+    assert parsed_data is not None
+    assert parsed_data["part_of_speech"] == "verb"
+    assert parsed_data["hebrew"] == unicodedata.normalize("NFD", "לְהַרְגִּישׁ")
+    assert parsed_data["transcription"] == "леhаргиш"
+    assert parsed_data["root"] == "ר - ג - שׁ"
+    assert parsed_data["binyan"] == "hifil"  # Проверяем маппинг
+    assert parsed_data["translations"][0]["translation_text"] == "чувствовать"
+    assert parsed_data["translations"][1]["translation_text"] == "чувствовать себя"
+    assert len(parsed_data["conjugations"]) > 1
+
+
+def test_parse_verb_nifal(verb_nifal_html: str):
+    """Тестирует парсинг страницы глагола (НИФЪАЛЬ)."""
+    soup = BeautifulSoup(verb_nifal_html, "html.parser")
+    main_header = soup.find("h2", class_="page-header")
+    parsed_data = parse_verb_page(soup, main_header)
+
+    assert parsed_data is not None
+    assert parsed_data["part_of_speech"] == "verb"
+    # На странице есть альтернативное написание, парсер должен брать первое
+    assert parsed_data["hebrew"] == unicodedata.normalize("NFD", "לְהִפָּגֵשׁ")
+    assert parsed_data["transcription"] == "леhипагеш"
+    assert parsed_data["root"] == "פ - ג - שׁ"
+    assert parsed_data["binyan"] == "nifal"  # Проверяем маппинг
+    assert parsed_data["translations"][0]["translation_text"] == "встретиться"
+    assert parsed_data["translations"][0]["context_comment"] == "в т. ч. случайно"
+    assert len(parsed_data["conjugations"]) > 1
+
+
+def test_parse_verb_hitpael(verb_hitpael_html: str):
+    """Тестирует парсинг страницы глагола (hИТПАЭЛЬ)."""
+    soup = BeautifulSoup(verb_hitpael_html, "html.parser")
+    main_header = soup.find("h2", class_="page-header")
+    parsed_data = parse_verb_page(soup, main_header)
+
+    assert parsed_data is not None
+    assert parsed_data["part_of_speech"] == "verb"
+    assert parsed_data["hebrew"] == unicodedata.normalize("NFD", "לְהִתְפַּלֵּל")
+    assert parsed_data["transcription"] == "леhитпалель"
+    assert parsed_data["root"] == "פ - ל - ל"
+    assert parsed_data["binyan"] == "hitpael"  # Проверяем маппинг
+    assert parsed_data["translations"][0]["translation_text"] == "молиться"
     assert len(parsed_data["conjugations"]) > 1
 
 

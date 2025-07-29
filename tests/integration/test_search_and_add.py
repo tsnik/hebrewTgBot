@@ -30,19 +30,53 @@ def MOCK_PEALIM_SEARCH_HTML(fixtures_path: Path) -> str:
         return f.read()
 
 
+@pytest.fixture(scope="module")
+def MOCK_VERB_WORD_HTML(fixtures_path: Path) -> str:
+    with open(fixtures_path / "1-lichtov.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="module")
+def MOCK_VERB_SEARCH_HTML(fixtures_path: Path) -> str:
+    with open(fixtures_path / "search-lichtov.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture
+def mock_search_html(request):
+    return request.getfixturevalue(request.param)
+
+
+@pytest.fixture
+def mock_word_html(request):
+    return request.getfixturevalue(request.param)
+
+
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mock_search_html, mock_word_html, search_word, word_hebrew, word_hebrew_normalized",
+    [
+        ("MOCK_PEALIM_SEARCH_HTML", "MOCK_PEALIM_WORD_HTML", "בדיקה", "בְּדִיקָה", "בדיקה"),
+        ("MOCK_VERB_SEARCH_HTML", "MOCK_VERB_WORD_HTML", "כותב", "לִכְתֹּב", "לכתב"),
+    ],
+    indirect=["mock_search_html", "mock_word_html"],
+)
 @patch("services.parser.httpx.AsyncClient")
 async def test_full_search_and_add_scenario(
-    mock_async_client, mock_context, MOCK_PEALIM_SEARCH_HTML, MOCK_PEALIM_WORD_HTML
+    mock_async_client,
+    mock_context,
+    mock_search_html,
+    mock_word_html,
+    search_word,
+    word_hebrew,
+    word_hebrew_normalized,
 ):
     async def side_effect_get(url, **kwargs):
         request = httpx.Request("GET", url)
         if "/search/" in str(url):
-            response = httpx.Response(
-                200, text=MOCK_PEALIM_SEARCH_HTML, request=request
-            )
+            response = httpx.Response(200, text=mock_search_html, request=request)
         else:
-            response = httpx.Response(200, text=MOCK_PEALIM_WORD_HTML, request=request)
+            response = httpx.Response(200, text=mock_word_html, request=request)
         return response
 
     mock_async_client.return_value.__aenter__.return_value.get.side_effect = (
@@ -52,7 +86,7 @@ async def test_full_search_and_add_scenario(
     # --- Часть 1: Поиск нового слова ---
     search_update = Mock()
     search_update.message = AsyncMock()
-    search_update.message.text = "בדיקה"
+    search_update.message.text = search_word
     search_update.message.reply_text.return_value = AsyncMock(message_id=111)
     type(search_update).effective_user = PropertyMock(
         return_value=Mock(id=TEST_USER_ID)
@@ -74,11 +108,11 @@ async def test_full_search_and_add_scenario(
         call_args = mock_display_word_card.call_args.args
         word_data = call_args[3]
 
-        assert word_data.hebrew == unicodedata.normalize("NFD", "בְּדִיקָה")
+        assert word_data.hebrew == unicodedata.normalize("NFD", word_hebrew)
 
     # --- Часть 2: Добавление слова в личный словарь ---
     with UnitOfWork() as uow:
-        found_words = uow.words.find_words_by_normalized_form("בדיקה")
+        found_words = uow.words.find_words_by_normalized_form(word_hebrew_normalized)
         assert len(found_words) == 1
         word_id = found_words[0].word_id
 
