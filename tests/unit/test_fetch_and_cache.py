@@ -26,10 +26,8 @@ async def test_fetch_and_cache_word_data_search_hit(monkeypatch):
     mock_word.hebrew = final_word
 
     # First call to find_word_by_normalized_form returns None, second call returns the mock_word
-    mock_uow.__enter__().words.find_word_by_normalized_form.side_effect = [
-        None,
-        mock_word,
-    ]
+    mock_uow.__enter__().words.find_word_by_normalized_form.return_value = None
+    mock_uow.__enter__().words.get_word_by_id.return_value = mock_word
 
     monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
 

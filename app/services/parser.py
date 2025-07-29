@@ -476,20 +476,22 @@ async def fetch_and_cache_word_data(
 
         with UnitOfWork() as uow:
             for word_data in parsed_data_list:
-                word = uow.words.find_word_by_normalized_form(
-                    word_data["normalized_hebrew"], True
+                words = uow.words.find_words_by_normalized_form(
+                    word_data["normalized_hebrew"]
                 )
+                word = None
+                for w in words:
+                    if w.hebrew == word_data["hebrew"]:
+                        word = w
+                        break
                 if word is None:
-                    uow.words.create_cached_word(**word_data)
-            uow.commit()
+                    word_data["word_id"] = uow.words.create_cached_word(**word_data)
 
         logger.info("Шаг 5: Ожидание появления слов в БД и возврат результата...")
         final_words_data = []
         with UnitOfWork() as uow:
             for word_data in parsed_data_list:
-                result = uow.words.find_word_by_normalized_form(
-                    word_data["normalized_hebrew"], True
-                )
+                result = uow.words.get_word_by_id(word_data["word_id"])
                 if result:
                     final_words_data.append(result)
                     logger.info(

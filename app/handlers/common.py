@@ -98,7 +98,9 @@ async def display_word_card(
         if word_data.root:
             card_text += f"\nКорень: {word_data.root}"
         if word_data.binyan:
-            display_binyan = BINYAN_MAP.get(word_data.binyan, word_data.binyan)
+            display_binyan = BINYAN_MAP.get(
+                word_data.binyan, word_data.binyan
+            ).capitalize()
             card_text += f"\nБиньян: {display_binyan}"
     elif pos == "noun":
         if word_data.gender:
