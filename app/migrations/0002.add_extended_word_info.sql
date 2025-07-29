@@ -4,7 +4,7 @@
 CREATE TABLE cached_words_new (
     word_id INTEGER PRIMARY KEY AUTOINCREMENT,
     hebrew TEXT NOT NULL,
-    normalized_hebrew TEXT NOT NULL UNIQUE,
+    normalized_hebrew TEXT NOT NULL,
     transcription TEXT,
     part_of_speech TEXT, -- Replaces is_verb
     root TEXT,
@@ -16,7 +16,8 @@ CREATE TABLE cached_words_new (
     feminine_singular TEXT,
     masculine_plural TEXT,
     feminine_plural TEXT,
-    fetched_at TIMESTAMP
+    fetched_at TIMESTAMP,
+	UNIQUE(hebrew, part_of_speech) 
 );
 
 -- step: 2
