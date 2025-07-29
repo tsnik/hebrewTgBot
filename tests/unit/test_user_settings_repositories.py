@@ -12,10 +12,6 @@ def get_test_connection(memory_db_uri: str) -> sqlite3.Connection:
     )
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON;")
-    # Для тестов нужно создать таблицу users, т.к. есть FOREIGN KEY
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY);"
-    )
     return connection
 
 

@@ -73,11 +73,17 @@ class WordRepository(BaseRepository):
         return self._row_to_model(word_data, CachedWord)
 
     def get_random_conjugation_for_word(
-        self, word_id: int
+        self, word_id: int, active_tenses: List[str]
     ) -> Optional[VerbConjugation]:
-        query = "SELECT * FROM verb_conjugations WHERE word_id = ? ORDER BY RANDOM() LIMIT 1"
+        """Возвращает случайное спряжение для слова, но только из списка активных времен."""
+        if not active_tenses:
+            return None
+
+        placeholders = ", ".join(["?"] * len(active_tenses))
+        query = f"SELECT * FROM verb_conjugations WHERE word_id = ? AND tense IN ({placeholders}) ORDER BY RANDOM() LIMIT 1"
+
         cursor = self.connection.cursor()
-        cursor.execute(query, (word_id,))
+        cursor.execute(query, (word_id, *active_tenses))
         conjugation_data = cursor.fetchone()
         return self._row_to_model(conjugation_data, VerbConjugation)
 

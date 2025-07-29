@@ -40,6 +40,7 @@ from config import (
     CB_SETTINGS_MENU,
     CB_TENSES_MENU,
     CB_TENSE_TOGGLE,
+    CB_SHOW_ALL_VERB_FORMS,
 )
 
 # Импортируем обработчики
@@ -51,6 +52,7 @@ from handlers.search import (
     view_word_card_handler,
     pealim_search_handler,
     select_word_handler,
+    show_all_verb_forms_handler,
 )
 from handlers.dictionary import (
     view_dictionary_page_handler,
@@ -159,6 +161,12 @@ def main() -> None:
     )
     application.add_handler(
         CallbackQueryHandler(view_word_card_handler, pattern=f"^{CB_VIEW_CARD}:")
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            show_all_verb_forms_handler, pattern=f"^{CB_SHOW_ALL_VERB_FORMS}:"
+        )
     )
 
     application.add_handler(
