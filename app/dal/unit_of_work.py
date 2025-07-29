@@ -7,13 +7,18 @@ from types import TracebackType
 from typing import Optional, Type
 
 from config import DB_NAME
-from dal.repositories import WordRepository, UserDictionaryRepository
+from dal.repositories import (
+    WordRepository,
+    UserDictionaryRepository,
+    UserSettingsRepository,
+)
 from services.connection import write_db_manager
 
 
 class AbstractUnitOfWork(abc.ABC):
     words: WordRepository
     user_dictionary: UserDictionaryRepository
+    user_settings: UserSettingsRepository
 
     def __enter__(self) -> AbstractUnitOfWork:
         return self
@@ -43,6 +48,7 @@ class UnitOfWork(AbstractUnitOfWork):
         self.connection = self.connection_manager.__enter__()
         self.words = WordRepository(self.connection)
         self.user_dictionary = UserDictionaryRepository(self.connection)
+        self.user_settings = UserSettingsRepository(self.connection)
         return super().__enter__()
 
     def __exit__(

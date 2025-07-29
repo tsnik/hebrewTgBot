@@ -37,6 +37,10 @@ from config import (
     CB_END_TRAINING,
     CB_SEARCH_PEALIM,
     CB_SELECT_WORD,
+    CB_SETTINGS_MENU,
+    CB_TENSES_MENU,
+    CB_TENSE_TOGGLE,
+    CB_SHOW_ALL_VERB_FORMS,
 )
 
 # Импортируем обработчики
@@ -48,6 +52,7 @@ from handlers.search import (
     view_word_card_handler,
     pealim_search_handler,
     select_word_handler,
+    show_all_verb_forms_handler,
 )
 from handlers.dictionary import (
     view_dictionary_page_handler,
@@ -62,6 +67,12 @@ from handlers.training import (
     start_verb_trainer,
     check_verb_answer,
     end_training,
+)
+
+from handlers.settings import (
+    settings_menu,
+    toggle_tense,
+    manage_tenses_menu,
 )
 
 
@@ -153,11 +164,28 @@ def main() -> None:
     )
 
     application.add_handler(
+        CallbackQueryHandler(
+            show_all_verb_forms_handler, pattern=f"^{CB_SHOW_ALL_VERB_FORMS}:"
+        )
+    )
+
+    application.add_handler(
         CallbackQueryHandler(pealim_search_handler, pattern=f"^{CB_SEARCH_PEALIM}:")
     )
 
     application.add_handler(
         CallbackQueryHandler(select_word_handler, pattern=f"^{CB_SELECT_WORD}:")
+    )
+
+    # Обработчики настроек
+    application.add_handler(
+        CallbackQueryHandler(settings_menu, pattern=f"^{CB_SETTINGS_MENU}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(manage_tenses_menu, pattern=f"^{CB_TENSES_MENU}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(toggle_tense, pattern=f"^{CB_TENSE_TOGGLE}:")
     )
 
     application.add_handler(training_conv)

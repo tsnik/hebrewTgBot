@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel
 from datetime import datetime
 from enum import Enum
@@ -100,3 +100,26 @@ class UserDictionaryEntry(BaseModel):
     srs_level: int
     next_review_at: datetime
     word: CachedWord
+
+
+class UserTenseSetting(BaseModel):
+    user_id: int
+    tense: Tense
+    is_active: bool
+
+
+class UserSettings(BaseModel):
+    user_id: int
+    tense_settings: Optional[List[UserTenseSetting]] = None
+
+    def get_active_tenses(self) -> List[str]:
+        """Возвращает список активных времен в виде строк."""
+        return [
+            setting.tense.value for setting in self.tense_settings if setting.is_active
+        ]
+
+    def get_settings_as_dict(self) -> Dict[str, bool]:
+        """Возвращает настройки в виде словаря. Удобно для быстрой проверки."""
+        return {
+            setting.tense.value: setting.is_active for setting in self.tense_settings
+        }

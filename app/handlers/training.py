@@ -21,6 +21,7 @@ from config import (
     CB_EVAL_CORRECT,
     CB_EVAL_INCORRECT,
     CB_END_TRAINING,
+    CB_SETTINGS_MENU,
     VERB_TRAINER_RETRY_ATTEMPTS,
     PERSON_MAP,
     TENSE_MAP,
@@ -203,14 +204,32 @@ async def handle_self_evaluation(
 
 
 async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Начинает тренировку глаголов."""
+    """Начинает тренировку глаголов с учетом настроек пользователя."""
     query = update.callback_query
     await query.answer()
-
     user_id = query.from_user.id
-    verb, conjugation = None, None
 
     with UnitOfWork() as uow:
+        user_settings = uow.user_settings.get_user_settings(user_id)
+        if not user_settings.tense_settings:
+            uow.user_settings.initialize_tense_settings(user_id)
+            uow.commit()
+            user_settings = uow.user_settings.get_user_settings(user_id)
+
+        active_tenses = user_settings.get_active_tenses()
+
+        if not active_tenses:
+            keyboard = [
+                [InlineKeyboardButton("⚙️ Настройки", callback_data=CB_SETTINGS_MENU)],
+                [InlineKeyboardButton("⬅️ Назад", callback_data=CB_TRAIN_MENU)],
+            ]
+            await query.edit_message_text(
+                "Чтобы начать тренировку, выберите хотя бы одно время в разделе 'Настройки'.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            return TRAINING_MENU_STATE
+
+        verb, conjugation = None, None
         for i in range(VERB_TRAINER_RETRY_ATTEMPTS):
             verb_candidate = uow.words.get_random_verb_for_training(user_id)
             if not verb_candidate:
@@ -223,19 +242,19 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 return TRAINING_MENU_STATE
 
             conjugation_candidate = uow.words.get_random_conjugation_for_word(
-                verb_candidate.word_id
+                verb_candidate.word_id, active_tenses
             )
             if conjugation_candidate:
                 verb, conjugation = verb_candidate, conjugation_candidate
                 break
             else:
                 logger.warning(
-                    f"Ошибка целостности данных: у глагола {verb_candidate.hebrew} (id: {verb_candidate.word_id}) нет спряжений. Попытка {i + 1}/{VERB_TRAINER_RETRY_ATTEMPTS}"
+                    f"Не найдено спряжений в активных временах для глагола {verb_candidate.hebrew}. Попытка {i + 1}"
                 )
 
     if not verb or not conjugation:
         await query.edit_message_text(
-            "Не удалось найти подходящий глагол для тренировки. Попробуйте позже.",
+            "Не удалось найти подходящий глагол для тренировки. Возможно, для глаголов в вашем словаре нет спряжений в выбранных временах.",
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("⬅️ Назад", callback_data=CB_TRAIN_MENU)]]
             ),
@@ -244,8 +263,10 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     context.user_data["answer"] = conjugation
 
-    person_display = PERSON_MAP.get(conjugation.person, conjugation.person)
-    tense_display = TENSE_MAP.get(conjugation.tense, conjugation.tense).capitalize()
+    person_display = PERSON_MAP.get(conjugation.person.value, conjugation.person.value)
+    tense_display = TENSE_MAP.get(
+        conjugation.tense.value, conjugation.tense.value
+    ).capitalize()
 
     question_text = f"Глагол: *{verb.hebrew}*\n\nНапишите его форму для:\n*{tense_display}, {person_display}*"
     await query.edit_message_text(question_text, parse_mode=ParseMode.MARKDOWN)

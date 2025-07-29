@@ -9,6 +9,7 @@ from config import (
     CB_VIEW_CARD,
     CB_SEARCH_PEALIM,
     CB_SELECT_WORD,
+    CB_SHOW_ALL_VERB_FORMS,
     PERSON_MAP,
     TENSE_MAP,
     logger,
@@ -234,15 +235,28 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
         )
 
 
-async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает таблицу спряжений для глагола."""
+async def show_verb_conjugations(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, show_all: bool = False
+):
+    """Показывает таблицу спряжений для глагола с учетом настроек пользователя."""
     query = update.callback_query
     await query.answer()
 
     word_id = int(query.data.split(":")[-1])
+    user_id = query.from_user.id
+
     with UnitOfWork() as uow:
         word_hebrew = uow.words.get_word_hebrew_by_id(word_id)
-        conjugations = uow.words.get_conjugations_for_word(word_id)
+        all_conjugations = uow.words.get_conjugations_for_word(word_id)
+
+        user_settings = uow.user_settings.get_user_settings(user_id)
+        # Инициализация, если настроек нет
+        if not user_settings.tense_settings:
+            uow.user_settings.initialize_tense_settings(user_id)
+            uow.commit()
+            user_settings = uow.user_settings.get_user_settings(user_id)
+
+        active_tenses = user_settings.get_active_tenses()
 
     keyboard = [
         [
@@ -252,29 +266,59 @@ async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_T
         ]
     ]
 
-    if not conjugations or not word_hebrew:
+    if not all_conjugations or not word_hebrew:
         await query.edit_message_text(
             "Для этого глагола нет таблицы спряжений.",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         return
 
-    conjugations_by_tense = {}
+    # Разделяем спряжения на активные и скрытые
+    active_conjugations = [
+        c for c in all_conjugations if c.tense.value in active_tenses
+    ]
+    hidden_conjugations = [
+        c for c in all_conjugations if c.tense.value not in active_tenses
+    ]
+
+    conjugations_to_display = all_conjugations if show_all else active_conjugations
+
     message_text = f"Спряжения для *{word_hebrew}*:\n"
 
-    for conj in conjugations:
-        if conj.tense not in conjugations_by_tense:
-            conjugations_by_tense[conj.tense.value] = []
-        conjugations_by_tense[conj.tense.value].append(conj)
+    if not conjugations_to_display and not show_all:
+        message_text = "Все времена скрыты. Включите их в разделе 'Настройки', чтобы увидеть спряжения по умолчанию."
+    else:
+        # Группируем по времени
+        conjugations_by_tense = {}
+        for conj in conjugations_to_display:
+            tense_val = conj.tense.value
+            if tense_val not in conjugations_by_tense:
+                conjugations_by_tense[tense_val] = []
+            conjugations_by_tense[tense_val].append(conj)
 
-    for tense, conj_list in conjugations_by_tense.items():
-        tense_display = TENSE_MAP.get(tense, tense)
-        message_text += f"\n*{tense_display.capitalize()}*:\n"
-        for conj in conj_list:
-            person_display = PERSON_MAP.get(conj.person.value, conj.person.value)
-            message_text += (
-                f"_{person_display}_: {conj.hebrew_form} ({conj.transcription})\n"
-            )
+        for tense, conj_list in sorted(
+            conjugations_by_tense.items(),
+            key=lambda item: list(TENSE_MAP.keys()).index(item[0]),
+        ):
+            tense_display = TENSE_MAP.get(tense, tense)
+            message_text += f"\n*{tense_display.capitalize()}*:\n"
+            for conj in conj_list:
+                person_display = PERSON_MAP.get(conj.person.value, conj.person.value)
+                message_text += (
+                    f"_{person_display}_: {conj.hebrew_form} ({conj.transcription})\n"
+                )
+
+    # Добавляем кнопку "Показать остальные", если нужно
+    if not show_all and hidden_conjugations:
+        keyboard.insert(
+            0,
+            [
+                InlineKeyboardButton(
+                    "👁️ Показать остальные времена",
+                    callback_data=f"{CB_SHOW_ALL_VERB_FORMS}:{word_id}",
+                )
+            ],
+        )
 
     if len(message_text) > 4096:
         message_text = message_text[:4090] + "\n(...)"
@@ -284,6 +328,13 @@ async def show_verb_conjugations(update: Update, context: ContextTypes.DEFAULT_T
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN,
     )
+
+
+async def show_all_verb_forms_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    """Обработчик для кнопки 'Показать остальные времена'."""
+    await show_verb_conjugations(update, context, show_all=True)
 
 
 async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

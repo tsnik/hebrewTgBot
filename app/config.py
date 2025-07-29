@@ -48,6 +48,7 @@ CB_SHOW_VERB = "verb:show"
 CB_VIEW_CARD = "word:view"
 CB_SELECT_WORD = "word:select"
 CB_SEARCH_PEALIM = "word:search_pealim"
+CB_SHOW_ALL_VERB_FORMS = "verb:show_all"
 
 # Меню тренировок
 CB_TRAIN_MENU = "train:menu"
@@ -60,6 +61,11 @@ CB_SHOW_ANSWER = "train:show_answer"
 CB_EVAL_CORRECT = "train:eval_correct"
 CB_EVAL_INCORRECT = "train:eval_incorrect"
 CB_END_TRAINING = "train:end"
+
+# Настройки
+CB_SETTINGS_MENU = "settings:menu"
+CB_TENSES_MENU = "settings:tenses_menu"
+CB_TENSE_TOGGLE = "settings:tense_toggle"
 
 
 # ДОБАВЛЕН СЛОВАРЬ ДЛЯ ОТОБРАЖЕНИЯ ЛИЦ

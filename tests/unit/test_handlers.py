@@ -3,7 +3,14 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime
 
 # Эти импорты верны, так как они отражают структуру вашего проекта
-from dal.models import CachedWord, Translation, VerbConjugation
+from dal.models import (
+    CachedWord,
+    Translation,
+    VerbConjugation,
+    UserSettings,
+    Tense,
+    UserTenseSetting,
+)
 from handlers.common import start, main_menu, back_to_main_menu, display_word_card
 from telegram.ext import ConversationHandler
 from handlers.dictionary import (
@@ -36,6 +43,7 @@ from config import (
     VERB_TRAINER_RETRY_ATTEMPTS,
     CB_SEARCH_PEALIM,
     CB_SELECT_WORD,
+    CB_SETTINGS_MENU,
 )
 
 
@@ -880,45 +888,87 @@ async def test_handle_text_message_no_local_match_triggers_pealim_search():
 
 
 @pytest.mark.asyncio
-async def test_show_verb_conjugations_success():
-    """Тест: успешное отображение спряжений глагола."""
+async def test_show_verb_conjugations_uses_settings():
+    """Тест: отображение спряжений глагола корректно фильтруется настройками."""
     update = AsyncMock()
     update.callback_query.data = "verb:show:1"
+    update.callback_query.from_user.id = 123
     context = MagicMock()
-    word_id = 1
 
     mock_conjugations = [
         VerbConjugation(
             id=1,
-            word_id=word_id,
-            normalized_hebrew_form="",
-            tense="perf",
+            word_id=1,
+            tense=Tense.PAST,
             person="1s",
-            hebrew_form="אני הייתי",
-            transcription="ani hayiti",
-        )
+            hebrew_form="כתבתי",
+            normalized_hebrew_form="",
+            transcription="katavti",
+        ),
+        VerbConjugation(
+            id=2,
+            word_id=1,
+            tense=Tense.IMPERATIVE,
+            person="2ms",
+            hebrew_form="כתוב",
+            normalized_hebrew_form="",
+            transcription="ktov",
+        ),
     ]
 
+    # Пользовательские настройки: активно только прошедшее время
+    user_settings = UserSettings(
+        user_id=123,
+        tense_settings=[
+            UserTenseSetting(user_id=123, tense=Tense.PAST, is_active=True),
+            UserTenseSetting(user_id=123, tense=Tense.IMPERATIVE, is_active=False),
+        ],
+    )
+
     with patch("handlers.search.UnitOfWork") as mock_uow_class:
-        mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
-        mock_uow_instance.words.get_word_hebrew_by_id.return_value = "להיות"
-        mock_uow_instance.words.get_conjugations_for_word.return_value = (
-            mock_conjugations
-        )
+        mock_uow = mock_uow_class.return_value.__enter__.return_value
+        mock_uow.words.get_word_hebrew_by_id.return_value = "לכתוב"
+        mock_uow.words.get_conjugations_for_word.return_value = mock_conjugations
+        mock_uow.user_settings.get_user_settings.return_value = user_settings
+        # Мокаем проверку на существование настроек
+        mock_uow.user_settings.get_tense_settings.return_value = {
+            "perf": True,
+            "imp": False,
+        }
 
         await show_verb_conjugations(update, context)
 
-        mock_uow_instance.words.get_conjugations_for_word.assert_called_once_with(
-            word_id
-        )
-        update.callback_query.answer.assert_called_once()
-        update.callback_query.edit_message_text.assert_called_once()
-
         call_args, call_kwargs = update.callback_query.edit_message_text.call_args
-        assert "Спряжения для *להיות*" in call_args[0]
+        # Проверяем, что отображается только активное (прошедшее) время
         assert "Прошедшее" in call_args[0]
-        assert "אני הייתי (ani hayiti)" in call_args[0]
-        assert "1 л., ед.ч. (я)" in call_args[0]
+        # Проверяем, что скрытое (повелительное) время НЕ отображается
+        assert "Повелительное" not in call_args[0]
+        # Проверяем, что появилась кнопка "Показать остальные"
+        keyboard = call_kwargs["reply_markup"].inline_keyboard
+        assert "👁️ Показать остальные времена" in keyboard[0][0].text
+
+
+@pytest.mark.asyncio
+async def test_show_verb_conjugations_all_hidden():
+    """Тест: отображается корректное сообщение, если все времена скрыты."""
+    update = AsyncMock()
+    update.callback_query.data = "verb:show:1"
+    update.callback_query.from_user.id = 123
+    context = MagicMock()
+
+    user_settings = UserSettings(user_id=123, tense_settings=[])
+
+    with patch("handlers.search.UnitOfWork") as mock_uow_class:
+        mock_uow = mock_uow_class.return_value.__enter__.return_value
+        mock_uow.words.get_word_hebrew_by_id.return_value = "לכתוב"
+        mock_uow.words.get_conjugations_for_word.return_value = [MagicMock()]
+        mock_uow.user_settings.get_user_settings.return_value = user_settings
+        mock_uow.user_settings.get_tense_settings.return_value = {}
+
+        await show_verb_conjugations(update, context, show_all=False)
+
+        call_args, _ = update.callback_query.edit_message_text.call_args
+        assert "Все времена скрыты" in call_args[0]
 
 
 @pytest.mark.asyncio
@@ -1169,12 +1219,27 @@ async def test_start_verb_trainer_happy_path():
         fetched_at=datetime.now(),
     )
 
+    mock_empty_user_settings = UserSettings(user_id=123)
+    mock_good_user_settings = UserSettings(
+        user_id=123,
+        tense_settings=[
+            UserTenseSetting(user_id=123, tense=Tense.PAST, is_active=True),
+            UserTenseSetting(user_id=123, tense=Tense.PRESENT, is_active=True),
+            UserTenseSetting(user_id=123, tense=Tense.FUTURE, is_active=True),
+            UserTenseSetting(user_id=123, tense=Tense.IMPERATIVE, is_active=False),
+        ],
+    )
+
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
         mock_uow_instance.words.get_random_verb_for_training.return_value = mock_verb
         mock_uow_instance.words.get_random_conjugation_for_word.return_value = (
             mock_conjugation
         )
+        mock_uow_instance.user_settings.get_user_settings.side_effect = [
+            mock_empty_user_settings,
+            mock_good_user_settings,
+        ]
 
         await start_verb_trainer(update, context)
 
@@ -1188,6 +1253,44 @@ async def test_start_verb_trainer_happy_path():
         call_text = update.callback_query.edit_message_text.call_args.args[0]
         assert "Глагол: *לכתוב*" in call_text
         assert "Напишите его форму для:\n*Будущее, 1 л., мн.ч. (мы)*" in call_text
+
+
+@pytest.mark.asyncio
+async def test_start_verb_trainer_no_active_tenses():
+    """Тест: тренажер глаголов сообщает об ошибке, если у пользователя нет активных времен."""
+    update = AsyncMock()
+    update.callback_query.from_user.id = 123
+    context = MagicMock()
+
+    # У пользователя все времена выключены, get_active_tenses вернет []
+    user_settings = UserSettings(
+        user_id=123,
+        tense_settings=[
+            UserTenseSetting(user_id=123, tense=Tense.PAST, is_active=False),
+            UserTenseSetting(user_id=123, tense=Tense.PRESENT, is_active=False),
+            UserTenseSetting(user_id=123, tense=Tense.FUTURE, is_active=False),
+            UserTenseSetting(user_id=123, tense=Tense.IMPERATIVE, is_active=False),
+        ],
+    )
+
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
+        mock_uow = mock_uow_class.return_value.__enter__.return_value
+        mock_uow.user_settings.get_user_settings.return_value = user_settings
+
+        # Мокаем проверку на существование настроек, чтобы избежать инициализации
+        mock_uow.user_settings.get_tense_settings.return_value = {"perf": False}
+
+        await start_verb_trainer(update, context)
+
+        update.callback_query.edit_message_text.assert_called_once()
+        call_args, call_kwargs = update.callback_query.edit_message_text.call_args
+
+        # Проверяем текст сообщения
+        assert "Чтобы начать тренировку, выберите хотя бы одно время" in call_args[0]
+
+        # Проверяем, что есть кнопка для перехода в настройки
+        keyboard = call_kwargs["reply_markup"].inline_keyboard
+        assert keyboard[0][0].callback_data == CB_SETTINGS_MENU
 
 
 @pytest.mark.asyncio
