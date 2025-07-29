@@ -466,16 +466,28 @@ async def test_handle_text_message_multiple_local_matches():
         word_id=10,
         hebrew="חָלָב",
         normalized_hebrew="חלב",
-        translations=[Translation(translation_id=1, translation_text="молоко", is_primary=True, word_id=10,
-        )],
+        translations=[
+            Translation(
+                translation_id=1,
+                translation_text="молоко",
+                is_primary=True,
+                word_id=10,
+            )
+        ],
         fetched_at=datetime.now(),
     )
     mock_word2 = CachedWord(
         word_id=11,
         hebrew="לַחְלוֹב",
         normalized_hebrew="לחלוֹב",
-        translations=[Translation(translation_id=2, translation_text="доить", is_primary=True, word_id=11,
-        )],
+        translations=[
+            Translation(
+                translation_id=2,
+                translation_text="доить",
+                is_primary=True,
+                word_id=11,
+            )
+        ],
         fetched_at=datetime.now(),
     )
 
@@ -657,10 +669,10 @@ async def test_select_word_handler():
     context = MagicMock()
 
     mock_word_data = CachedWord(
-    word_id = 10,
-    hebrew="חָלָב",
-    normalized_hebrew="חָלָב",
-    fetched_at = datetime.now(),
+        word_id=10,
+        hebrew="חָלָב",
+        normalized_hebrew="חָלָב",
+        fetched_at=datetime.now(),
     )
 
     with patch("handlers.search.UnitOfWork") as mock_uow_class:
@@ -824,10 +836,10 @@ async def test_handle_text_message_word_in_db():
     context = MagicMock()
 
     mock_word_data = CachedWord(
-    word_id = 1, 
-    hebrew = "שלום",
-    normalized_hebrew = "שלום",
-    fetched_at = datetime.now(),
+        word_id=1,
+        hebrew="שלום",
+        normalized_hebrew="שלום",
+        fetched_at=datetime.now(),
     )
 
     with patch("handlers.search.UnitOfWork") as mock_uow_class:
@@ -1001,12 +1013,16 @@ async def test_show_answer():
     update = AsyncMock()
     context = MagicMock()
     mock_word = CachedWord(
-    word_id = 1,
-    hebrew = "שלום",
-    normalized_hebrew = "שלום",
-    transcription = "shalom",
-    translations = [Translation(translation_id = 1, translation_text="привет", word_id=1, is_primary=True)],
-    fetched_at = datetime.now(),
+        word_id=1,
+        hebrew="שלום",
+        normalized_hebrew="שלום",
+        transcription="shalom",
+        translations=[
+            Translation(
+                translation_id=1, translation_text="привет", word_id=1, is_primary=True
+            )
+        ],
+        fetched_at=datetime.now(),
     )
     context.user_data = {"words": [mock_word], "idx": 0}
 
@@ -1031,10 +1047,10 @@ async def test_handle_self_evaluation_logic(evaluation, expected_srs):
     update.callback_query.from_user.id = 123
     context = MagicMock()
     mock_word = CachedWord(
-    word_id = 1,
-    hebrew = "שלום",
-    normalized_hebrew = "שלום",
-    fetched_at = datetime.now(),
+        word_id=1,
+        hebrew="שלום",
+        normalized_hebrew="שלום",
+        fetched_at=datetime.now(),
     )
     context.user_data = {"words": [mock_word], "idx": 0, "correct": 0}
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
@@ -1061,16 +1077,15 @@ async def test_check_verb_answer_correct_and_incorrect():
     update_correct.effective_user.id = 123
     context_correct = MagicMock()
     mock_conjugation = VerbConjugation(
-    id=1,
-    hebrew_form="ילך",
-    normalized_hebrew_form="ילך",
-    transcription="yelekh",
-    tense='ap',
-    person='ms',
-    word_id=5)
-    context_correct.user_data = {
-        "answer": mock_conjugation
-    }
+        id=1,
+        hebrew_form="ילך",
+        normalized_hebrew_form="ילך",
+        transcription="yelekh",
+        tense="ap",
+        person="ms",
+        word_id=5,
+    )
+    context_correct.user_data = {"answer": mock_conjugation}
 
     with patch("handlers.training.UnitOfWork"):
         await check_verb_answer(update_correct, context_correct)
@@ -1083,9 +1098,7 @@ async def test_check_verb_answer_correct_and_incorrect():
     update_incorrect.message.text = "הולך"
     update_incorrect.effective_user.id = 123
     context_incorrect = MagicMock()
-    context_incorrect.user_data = {
-        "answer": mock_conjugation
-    }
+    context_incorrect.user_data = {"answer": mock_conjugation}
 
     with patch("handlers.training.UnitOfWork"):
         await check_verb_answer(update_incorrect, context_incorrect)
@@ -1138,9 +1151,8 @@ async def test_start_verb_trainer_happy_path():
     context = MagicMock()
     context.user_data = {}
 
-    
     mock_conjugation = VerbConjugation(
-        id = 1,
+        id=1,
         tense="impf",
         person="1p",
         hebrew_form="נכתוב",
@@ -1148,13 +1160,13 @@ async def test_start_verb_trainer_happy_path():
         transcription="нихтов",
         word_id=10,
     )
-    
+
     mock_verb = CachedWord(
-    word_id=10, 
-    hebrew="לכתוב",
-    normalized_hebrew="לכתוב",
-    conjugations = [mock_conjugation],
-    fetched_at=datetime.now()
+        word_id=10,
+        hebrew="לכתוב",
+        normalized_hebrew="לכתוב",
+        conjugations=[mock_conjugation],
+        fetched_at=datetime.now(),
     )
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
@@ -1192,22 +1204,22 @@ async def test_start_verb_trainer_retry_logic():
         person="1p",
         hebrew_form="רצים",
         normalized_hebrew_form="רצים",
-        transcription='рацим',
-        word_id=12
+        transcription="рацим",
+        word_id=12,
     )
     mock_verb_no_conj = CachedWord(
-    word_id=11, 
-    hebrew="פועל_בלי_כלום",
-    normalized_hebrew="פועל_בלי_כלום",
-    fetched_at=datetime.now(),
+        word_id=11,
+        hebrew="פועל_בלי_כלום",
+        normalized_hebrew="פועל_בלי_כלום",
+        fetched_at=datetime.now(),
     )
     mock_verb_with_conj = CachedWord(
-    word_id=12, 
-    hebrew="לרוץ",
-    normalized_hebrew="לרוץ",
-    conjugations=[mock_conjugation],
-    fetched_at=datetime.now())
-    
+        word_id=12,
+        hebrew="לרוץ",
+        normalized_hebrew="לרוץ",
+        conjugations=[mock_conjugation],
+        fetched_at=datetime.now(),
+    )
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
@@ -1246,10 +1258,11 @@ async def test_start_verb_trainer_fails_after_retries():
     context = MagicMock()
 
     mock_verb = CachedWord(
-    word_id=11, 
-    hebrew="פועל_בלי_כלום",
-    normalized_hebrew="",
-    fetched_at=datetime.now())
+        word_id=11,
+        hebrew="פועל_בלי_כלום",
+        normalized_hebrew="",
+        fetched_at=datetime.now(),
+    )
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
