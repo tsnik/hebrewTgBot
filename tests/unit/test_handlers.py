@@ -43,6 +43,7 @@ from config import (
     VERB_TRAINER_RETRY_ATTEMPTS,
     CB_SEARCH_PEALIM,
     CB_SELECT_WORD,
+    CB_SETTINGS_MENU,
 )
 
 
@@ -1252,6 +1253,44 @@ async def test_start_verb_trainer_happy_path():
         call_text = update.callback_query.edit_message_text.call_args.args[0]
         assert "Глагол: *לכתוב*" in call_text
         assert "Напишите его форму для:\n*Будущее, 1 л., мн.ч. (мы)*" in call_text
+
+
+@pytest.mark.asyncio
+async def test_start_verb_trainer_no_active_tenses():
+    """Тест: тренажер глаголов сообщает об ошибке, если у пользователя нет активных времен."""
+    update = AsyncMock()
+    update.callback_query.from_user.id = 123
+    context = MagicMock()
+
+    # У пользователя все времена выключены, get_active_tenses вернет []
+    user_settings = UserSettings(
+        user_id=123,
+        tense_settings=[
+            UserTenseSetting(user_id=123, tense=Tense.PAST, is_active=False),
+            UserTenseSetting(user_id=123, tense=Tense.PRESENT, is_active=False),
+            UserTenseSetting(user_id=123, tense=Tense.FUTURE, is_active=False),
+            UserTenseSetting(user_id=123, tense=Tense.IMPERATIVE, is_active=False),
+        ],
+    )
+
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
+        mock_uow = mock_uow_class.return_value.__enter__.return_value
+        mock_uow.user_settings.get_user_settings.return_value = user_settings
+
+        # Мокаем проверку на существование настроек, чтобы избежать инициализации
+        mock_uow.user_settings.get_tense_settings.return_value = {"perf": False}
+
+        await start_verb_trainer(update, context)
+
+        update.callback_query.edit_message_text.assert_called_once()
+        call_args, call_kwargs = update.callback_query.edit_message_text.call_args
+
+        # Проверяем текст сообщения
+        assert "Чтобы начать тренировку, выберите хотя бы одно время" in call_args[0]
+
+        # Проверяем, что есть кнопка для перехода в настройки
+        keyboard = call_kwargs["reply_markup"].inline_keyboard
+        assert keyboard[0][0].callback_data == CB_SETTINGS_MENU
 
 
 @pytest.mark.asyncio
