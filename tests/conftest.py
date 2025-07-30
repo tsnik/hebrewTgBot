@@ -9,7 +9,7 @@ import config
 from services.connection import DatabaseConnectionManager
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="module")
 def monkeypatch_session(request):
     """A session-scoped monkeypatch to use in session-scoped fixtures."""
     from _pytest.monkeypatch import MonkeyPatch

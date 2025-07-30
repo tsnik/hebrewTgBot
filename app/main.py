@@ -79,15 +79,8 @@ from handlers.settings import (
 from metrics import CALLBACKS_COUNTER, MESSAGES_COUNTER
 
 
-def main() -> None:
-    """Основная функция для запуска бота."""
-    start_http_server(8000)
-    if not BOT_TOKEN:
-        logger.critical(
-            "Токен бота не найден. Укажите TELEGRAM_BOT_TOKEN в .env файле."
-        )
-        sys.exit("Токен не найден.")
-
+def build_application() -> Application:
+    """Строит и возвращает объект Application."""
     application = Application.builder().token(BOT_TOKEN).build()
 
     conv_defaults = {
@@ -197,10 +190,22 @@ def main() -> None:
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )
+    return application
 
+
+def main() -> None:
+    """Основная функция для запуска бота."""
+    if not BOT_TOKEN:
+        logger.critical(
+            "Токен бота не найден. Укажите TELEGRAM_BOT_TOKEN в .env файле."
+        )
+        sys.exit("Токен не найден.")
+
+    application = build_application()
     logger.info("Бот запускается...")
     application.run_polling()
 
 
 if __name__ == "__main__":
+    start_http_server(8000)
     main()
