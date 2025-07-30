@@ -1,12 +1,20 @@
 import pytest
 from unittest.mock import AsyncMock
 from telegram import Update
+import importlib
+from prometheus_client import CollectorRegistry
 
 
 @pytest.mark.asyncio
 async def test_message_counter(monkeypatch):
     """Test that the message counter is incremented."""
+    registry = CollectorRegistry()
+    import app.metrics
+    monkeypatch.setattr(app.metrics, "REGISTRY", registry)
+    importlib.reload(app.metrics)
     from app.metrics import MESSAGES_COUNTER
+    import app.handlers.search
+    importlib.reload(app.handlers.search)
     from app.handlers.search import handle_text_message
 
     monkeypatch.setattr("app.handlers.search.search_in_pealim", AsyncMock())
@@ -34,9 +42,15 @@ async def test_message_counter(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_callback_counter():
+async def test_callback_counter(monkeypatch):
     """Test that the callback counter is incremented."""
+    registry = CollectorRegistry()
+    import app.metrics
+    monkeypatch.setattr(app.metrics, "REGISTRY", registry)
+    importlib.reload(app.metrics)
     from app.metrics import CALLBACKS_COUNTER
+    import app.handlers.common
+    importlib.reload(app.handlers.common)
     from app.handlers.common import main_menu
 
     initial_callbacks = CALLBACKS_COUNTER._value.get()

@@ -93,27 +93,15 @@ def patch_db_name(monkeypatch, memory_db):
     monkeypatch.setattr(dal.unit_of_work, "write_db_manager", new_manager)
 
 
-import importlib
+from prometheus_client import REGISTRY
 
 
 @pytest.fixture(autouse=True)
-def reset_metrics():
-    """
-    Clears the default registry and reloads the metrics and handler modules
-    to ensure counters are fresh and correctly referenced for each test.
-    """
-    from prometheus_client import REGISTRY, PROCESS_COLLECTOR, PLATFORM_COLLECTOR, GC_COLLECTOR
-
-    # Unregister all custom collectors
-    for collector in list(REGISTRY._collector_to_names.keys()):
-        if collector not in {PROCESS_COLLECTOR, PLATFORM_COLLECTOR, GC_COLLECTOR}:
-            REGISTRY.unregister(collector)
-
-    # Reload modules to re-register metrics and ensure handlers use the new instances
-    import app.metrics
-    import app.handlers.common
-    import app.handlers.search
-
-    importlib.reload(app.metrics)
-    importlib.reload(app.handlers.common)
-    importlib.reload(app.handlers.search)
+def unregister_metrics():
+    """Unregister all metrics from the registry before each test."""
+    print("Unregistering metrics...")
+    collectors = list(REGISTRY._collector_to_names.keys())
+    print(f"Collectors to unregister: {collectors}")
+    for collector in collectors:
+        REGISTRY.unregister(collector)
+    print("Metrics unregistered.")
