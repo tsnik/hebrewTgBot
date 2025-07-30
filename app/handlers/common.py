@@ -43,6 +43,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @increment_callbacks_counter
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Возвращает пользователя в главное меню."""
+    print("main_menu called")
     query = update.callback_query
     await query.answer()
     keyboard = [

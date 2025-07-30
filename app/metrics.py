@@ -1,21 +1,18 @@
 # -*- coding: utf-8 -*-
 
 from functools import wraps
-from prometheus_client import Counter, REGISTRY
+from prometheus_client import Counter
 
 MESSAGES_COUNTER = Counter(
-    "bot_messages_total", "Total number of messages received by the bot",
-    registry=None
+    "bot_messages_total", "Total number of messages received by the bot"
 )
 CALLBACKS_COUNTER = Counter(
-    "bot_callbacks_total", "Total number of callback queries received by the bot",
-    registry=None
+    "bot_callbacks_total", "Total number of callback queries received by the bot"
 )
 
 
 def register_metrics():
-    REGISTRY.register(MESSAGES_COUNTER)
-    REGISTRY.register(CALLBACKS_COUNTER)
+    pass
 
 
 def increment_callbacks_counter(func):

@@ -23,6 +23,7 @@ from metrics import increment_callbacks_counter, MESSAGES_COUNTER
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Основной обработчик текстовых сообщений для поиска слов."""
+    print("handle_text_message called")
     MESSAGES_COUNTER.inc()
     if "queue" in context.user_data:
         await context.user_data["queue"].put("message")

@@ -76,7 +76,6 @@ from handlers.settings import (
     toggle_tense,
     manage_tenses_menu,
 )
-from metrics import CALLBACKS_COUNTER, MESSAGES_COUNTER
 
 
 def build_application() -> Application:
@@ -207,8 +206,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    from app.metrics import register_metrics
-
-    register_metrics()
-    start_http_server(8000)
+    from app.metrics import registry
+    start_http_server(8000, registry=registry)
     main()
