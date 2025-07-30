@@ -28,7 +28,7 @@ from config import (
 )
 from dal.unit_of_work import UnitOfWork
 from utils import normalize_hebrew
-from metrics import increment_callbacks_counter
+from metrics import increment_callbacks_counter, increment_messages_counter
 
 # --- Вход в меню тренировок ---
 
@@ -280,6 +280,7 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return AWAITING_VERB_ANSWER
 
 
+@increment_messages_counter
 async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Проверяет ответ пользователя в тренировке глаголов."""
     correct_answer = context.user_data.get("answer")
