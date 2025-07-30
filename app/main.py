@@ -206,7 +206,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    from app.metrics import register_metrics, registry
-    register_metrics()
-    start_http_server(8000, registry=registry)
+    from app.metrics import create_counters
+    from prometheus_client import REGISTRY
+    create_counters(REGISTRY)
+    start_http_server(8000, registry=REGISTRY)
     main()

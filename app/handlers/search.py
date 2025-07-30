@@ -18,7 +18,8 @@ from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card
 from dal.unit_of_work import UnitOfWork
-from metrics import increment_callbacks_counter, MESSAGES_COUNTER
+from metrics import increment_callbacks_counter
+from app.bot import MESSAGES_COUNTER
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
