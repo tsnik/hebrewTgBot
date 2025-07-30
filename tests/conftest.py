@@ -7,6 +7,7 @@ import dal.unit_of_work
 import services.connection
 import config
 from services.connection import DatabaseConnectionManager
+from prometheus_client import REGISTRY
 
 
 @pytest.fixture(scope="module")
@@ -91,9 +92,6 @@ def patch_db_name(monkeypatch, memory_db):
     # новый, чистый экземпляр, подключенный к изолированной БД этого теста.
     new_manager = DatabaseConnectionManager(db_name=memory_db, read_only=False)
     monkeypatch.setattr(dal.unit_of_work, "write_db_manager", new_manager)
-
-
-from prometheus_client import REGISTRY
 
 
 @pytest.fixture(autouse=True)
