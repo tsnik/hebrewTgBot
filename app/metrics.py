@@ -23,6 +23,7 @@ def increment_callbacks_counter(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
         from app.bot import CALLBACKS_COUNTER
+
         CALLBACKS_COUNTER.inc()
         return await func(*args, **kwargs)
 
