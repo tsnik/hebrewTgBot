@@ -69,15 +69,19 @@ from handlers.training import (
     end_training,
 )
 
+from prometheus_client import start_http_server
+
 from handlers.settings import (
     settings_menu,
     toggle_tense,
     manage_tenses_menu,
 )
+from metrics import CALLBACKS_COUNTER, MESSAGES_COUNTER
 
 
 def main() -> None:
     """Основная функция для запуска бота."""
+    start_http_server(8000)
     if not BOT_TOKEN:
         logger.critical(
             "Токен бота не найден. Укажите TELEGRAM_BOT_TOKEN в .env файле."

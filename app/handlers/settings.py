@@ -6,8 +6,10 @@ from telegram.ext import ContextTypes
 from config import CB_SETTINGS_MENU, CB_TENSES_MENU, CB_TENSE_TOGGLE, TENSE_MAP
 from dal.unit_of_work import UnitOfWork
 from dal.models import Tense
+from metrics import increment_callbacks_counter
 
 
+@increment_callbacks_counter
 async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отображает главное меню настроек."""
     query = update.callback_query
@@ -23,6 +25,7 @@ async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@increment_callbacks_counter
 async def manage_tenses_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отображает меню управления временами глаголов."""
     query = update.callback_query
@@ -66,6 +69,7 @@ async def manage_tenses_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
 
+@increment_callbacks_counter
 async def toggle_tense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает переключение статуса времени."""
     query = update.callback_query
