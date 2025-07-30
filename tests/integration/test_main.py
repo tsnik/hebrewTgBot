@@ -1,4 +1,3 @@
-import pytest
 from app.main import build_application
 from telegram.ext import Application
 
