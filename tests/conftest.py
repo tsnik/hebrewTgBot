@@ -7,7 +7,6 @@ import dal.unit_of_work
 import services.connection
 import config
 from services.connection import DatabaseConnectionManager
-from prometheus_client import REGISTRY
 
 
 @pytest.fixture(scope="module")
@@ -92,14 +91,3 @@ def patch_db_name(monkeypatch, memory_db):
     # новый, чистый экземпляр, подключенный к изолированной БД этого теста.
     new_manager = DatabaseConnectionManager(db_name=memory_db, read_only=False)
     monkeypatch.setattr(dal.unit_of_work, "write_db_manager", new_manager)
-
-
-@pytest.fixture(autouse=True)
-def unregister_metrics():
-    """Unregister all metrics from the registry before each test."""
-    print("Unregistering metrics...")
-    collectors = list(REGISTRY._collector_to_names.keys())
-    print(f"Collectors to unregister: {collectors}")
-    for collector in collectors:
-        REGISTRY.unregister(collector)
-    print("Metrics unregistered.")

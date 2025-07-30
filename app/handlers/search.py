@@ -18,13 +18,12 @@ from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card
 from dal.unit_of_work import UnitOfWork
-from metrics import increment_callbacks_counter
-from app.bot import MESSAGES_COUNTER
+from metrics import increment_callbacks_counter, increment_messages_counter
 
 
+@increment_messages_counter
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Основной обработчик текстовых сообщений для поиска слов."""
-    MESSAGES_COUNTER.inc()
     if "queue" in context.user_data:
         await context.user_data["queue"].put("message")
     if not update.message or not update.message.text:
