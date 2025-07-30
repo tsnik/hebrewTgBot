@@ -18,10 +18,14 @@ from services.parser import fetch_and_cache_word_data
 from utils import normalize_hebrew
 from handlers.common import display_word_card
 from dal.unit_of_work import UnitOfWork
+from metrics import increment_callbacks_counter, increment_messages_counter
 
 
+@increment_messages_counter
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Основной обработчик текстовых сообщений для поиска слов."""
+    if "queue" in context.user_data:
+        await context.user_data["queue"].put("message")
     if not update.message or not update.message.text:
         return
 
@@ -172,6 +176,7 @@ async def search_in_pealim(
         )
 
 
+@increment_callbacks_counter
 async def pealim_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик кнопки 'Искать еще в Pealim'."""
     query_data = update.callback_query.data.split(":")
@@ -179,6 +184,7 @@ async def pealim_search_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await search_in_pealim(update, context, search_query)
 
 
+@increment_callbacks_counter
 async def select_word_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора одного из нескольких найденных слов."""
     query = update.callback_query
@@ -210,6 +216,7 @@ async def select_word_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text("Ошибка: не удалось найти выбранное слово.")
 
 
+@increment_callbacks_counter
 async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик нажатия кнопки 'Добавить'."""
     query = update.callback_query
@@ -235,6 +242,7 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
         )
 
 
+@increment_callbacks_counter
 async def show_verb_conjugations(
     update: Update, context: ContextTypes.DEFAULT_TYPE, show_all: bool = False
 ):
@@ -330,6 +338,7 @@ async def show_verb_conjugations(
     )
 
 
+@increment_callbacks_counter
 async def show_all_verb_forms_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -337,6 +346,7 @@ async def show_all_verb_forms_handler(
     await show_verb_conjugations(update, context, show_all=True)
 
 
+@increment_callbacks_counter
 async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик для возврата к карточке слова (например, со страницы спряжений)."""
     query = update.callback_query

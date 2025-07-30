@@ -13,8 +13,10 @@ from config import (
     DICT_WORDS_PER_PAGE,
 )
 from dal.unit_of_work import UnitOfWork
+from metrics import increment_callbacks_counter
 
 
+@increment_callbacks_counter
 async def view_dictionary_page_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -143,6 +145,7 @@ async def view_dictionary_page_logic(
     )
 
 
+@increment_callbacks_counter
 async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает подтверждение удаления слова."""
     query = update.callback_query
@@ -173,6 +176,7 @@ async def confirm_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
+@increment_callbacks_counter
 async def execute_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Окончательно удаляет слово из словаря пользователя."""
     query = update.callback_query

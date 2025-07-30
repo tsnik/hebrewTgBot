@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- КОНФИГУРАЦИЯ БОТА ---
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip().strip("'\"")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", None)
 DB_NAME = "data/hebrew_helper_cache.db"
 
 # --- НАСТРОЙКИ ПАРСЕРА И БД ---

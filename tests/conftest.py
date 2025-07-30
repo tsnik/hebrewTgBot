@@ -10,17 +10,7 @@ from services.connection import DatabaseConnectionManager
 
 
 @pytest.fixture(scope="function")
-def monkeypatch_session(request):
-    """A session-scoped monkeypatch to use in session-scoped fixtures."""
-    from _pytest.monkeypatch import MonkeyPatch
-
-    mpatch = MonkeyPatch()
-    yield mpatch
-    mpatch.undo()
-
-
-@pytest.fixture(scope="function")
-def memory_db(monkeypatch_session):
+def memory_db(monkeypatch):
     """
     Fixture to set up a shared in-memory SQLite database for the test session.
 
@@ -54,7 +44,7 @@ def memory_db(monkeypatch_session):
         return conn
 
     # 2. Патчим метод 'connect' в классе SQLiteBackend с помощью сессионного monkeypatch
-    monkeypatch_session.setattr(SQLiteBackend, "connect", patched_sqlite_connect)
+    monkeypatch.setattr(SQLiteBackend, "connect", patched_sqlite_connect)
 
     # 3. Теперь yoyo будет использовать наш метод для подключения
     backend = get_backend(db_uri_for_yoyo)

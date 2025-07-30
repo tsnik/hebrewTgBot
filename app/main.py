@@ -69,6 +69,8 @@ from handlers.training import (
     end_training,
 )
 
+from prometheus_client import start_http_server
+
 from handlers.settings import (
     settings_menu,
     toggle_tense,
@@ -76,14 +78,8 @@ from handlers.settings import (
 )
 
 
-def main() -> None:
-    """Основная функция для запуска бота."""
-    if not BOT_TOKEN:
-        logger.critical(
-            "Токен бота не найден. Укажите TELEGRAM_BOT_TOKEN в .env файле."
-        )
-        sys.exit("Токен не найден.")
-
+def build_application() -> Application:
+    """Строит и возвращает объект Application."""
     application = Application.builder().token(BOT_TOKEN).build()
 
     conv_defaults = {
@@ -193,10 +189,25 @@ def main() -> None:
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )
+    return application
 
+
+def main() -> None:
+    """Основная функция для запуска бота."""
+    if BOT_TOKEN is None:
+        logger.critical(
+            "Токен бота не найден. Укажите TELEGRAM_BOT_TOKEN в .env файле."
+        )
+        sys.exit("Токен не найден.")
+        return
+
+    application = build_application()
     logger.info("Бот запускается...")
     application.run_polling()
 
 
 if __name__ == "__main__":
+    from prometheus_client import REGISTRY
+
+    start_http_server(8000, registry=REGISTRY)
     main()
