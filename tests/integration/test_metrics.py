@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import AsyncMock
-from prometheus_client import CollectorRegistry
 from telegram import Update
 
 

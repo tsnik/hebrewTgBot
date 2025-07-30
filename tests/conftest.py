@@ -91,3 +91,19 @@ def patch_db_name(monkeypatch, memory_db):
     # новый, чистый экземпляр, подключенный к изолированной БД этого теста.
     new_manager = DatabaseConnectionManager(db_name=memory_db, read_only=False)
     monkeypatch.setattr(dal.unit_of_work, "write_db_manager", new_manager)
+
+
+@pytest.fixture(autouse=True)
+def clear_prometheus_registry():
+    """
+    Fixture to clear the default Prometheus registry before each test.
+    This prevents errors from re-registering metrics.
+    """
+    from prometheus_client import PROCESS_COLLECTOR, PLATFORM_COLLECTOR, GC_COLLECTOR, REGISTRY
+
+    core_collectors = {PROCESS_COLLECTOR, PLATFORM_COLLECTOR, GC_COLLECTOR}
+
+    # Unregister all collectors except the core ones
+    for collector in list(REGISTRY._collector_to_names.keys()):
+        if collector not in core_collectors:
+            REGISTRY.unregister(collector)

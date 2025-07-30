@@ -206,6 +206,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    from app.metrics import registry
+    from app.metrics import register_metrics, registry
+    register_metrics()
     start_http_server(8000, registry=registry)
     main()
