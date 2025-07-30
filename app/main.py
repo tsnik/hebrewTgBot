@@ -194,11 +194,12 @@ def build_application() -> Application:
 
 def main() -> None:
     """Основная функция для запуска бота."""
-    if not BOT_TOKEN:
+    if BOT_TOKEN is None:
         logger.critical(
             "Токен бота не найден. Укажите TELEGRAM_BOT_TOKEN в .env файле."
         )
         sys.exit("Токен не найден.")
+        return
 
     application = build_application()
     logger.info("Бот запускается...")
