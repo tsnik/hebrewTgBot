@@ -69,7 +69,7 @@ def _get_part_of_speech_from_meta(soup: BeautifulSoup) -> Optional[str]:
         return None
 
     content = meta_tag.get("content", "").lower()
-    if content.startswith("verb"):
+    if content.startswith("глагол"):
         return "verb"
     if content.startswith("существительное"):
         return "noun"
@@ -188,9 +188,11 @@ def parse_verb_page(soup: BeautifulSoup, main_header: Tag) -> Optional[Dict[str,
                     p.text.replace("Verb –", "").replace("Глагол –", "").strip()
                 )
                 binyan = binyan_text.split()[0] if binyan_text else None
-                data["binyan"] = (
-                    BINYAN_HTML_MAP.get(binyan.lower(), binyan) if binyan else None
+                binyan_enum_value = (
+                    BINYAN_HTML_MAP.get(binyan.lower()) if binyan else None
                 )
+                if binyan_enum_value:
+                    data["binyan"] = binyan_enum_value
 
             if "root" in text_lower or "корень" in text_lower:
                 root_tag = p.find("span", class_="menukad")
