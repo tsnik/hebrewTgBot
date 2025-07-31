@@ -199,10 +199,12 @@ async def select_word_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
 
-    logger.info(query.data)
-
     _, _, word_id_str, search_query = query.data.split(":")
     word_id = int(word_id_str)
+
+    logger.info(
+        f"User selected word_id={word_id} from search results for query='{search_query}'."
+    )
 
     user_id = query.from_user.id
     chat_id = query.message.chat_id

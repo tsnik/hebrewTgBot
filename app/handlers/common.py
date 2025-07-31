@@ -72,7 +72,10 @@ async def display_word_card(
     Отображает карточку слова. Редактирует существующее сообщение, если
     передан message_id, иначе отправляет новое.
     """
-    logger.info(f"-> display_word_card: Получены данные для карточки: {word_data}")
+    logger.info(
+        f"Displaying card for word_id={word_data.word_id} ('{word_data.hebrew}'). Message_id: {message_id or 'new'}."
+    )
+    logger.debug(f"Full word_data for card: {word_data}")
 
     word_id = word_data.word_id
 
