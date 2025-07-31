@@ -20,8 +20,10 @@ from config import (
 from dal.unit_of_work import UnitOfWork
 from dal.models import CachedWord
 from metrics import increment_callbacks_counter
+from utils import set_request_id
 
 
+@set_request_id
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start."""
     user = update.effective_user
@@ -41,6 +43,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @increment_callbacks_counter
+@set_request_id
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Возвращает пользователя в главное меню."""
     query = update.callback_query
@@ -69,7 +72,10 @@ async def display_word_card(
     Отображает карточку слова. Редактирует существующее сообщение, если
     передан message_id, иначе отправляет новое.
     """
-    logger.info(f"-> display_word_card: Получены данные для карточки: {word_data}")
+    logger.info(
+        f"Displaying card for word_id={word_data.word_id} ('{word_data.hebrew}'). Message_id: {message_id or 'new'}."
+    )
+    logger.debug(f"Full word_data for card: {word_data}")
 
     word_id = word_data.word_id
 
@@ -200,6 +206,7 @@ async def display_word_card(
 
 
 @increment_callbacks_counter
+@set_request_id
 async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Завершает диалог и возвращает в главное меню."""
     await main_menu(update, context)

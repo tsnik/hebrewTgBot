@@ -27,13 +27,14 @@ from config import (
     TENSE_MAP,
 )
 from dal.unit_of_work import UnitOfWork
-from utils import normalize_hebrew
+from utils import normalize_hebrew, set_request_id
 from metrics import increment_callbacks_counter, increment_messages_counter
 
 # --- Вход в меню тренировок ---
 
 
 @increment_callbacks_counter
+@set_request_id
 async def training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Отображает меню выбора режима тренировки."""
     query = update.callback_query
@@ -77,6 +78,7 @@ async def training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 
 @increment_callbacks_counter
+@set_request_id
 async def start_flashcard_training(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -155,6 +157,7 @@ async def show_next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 @increment_callbacks_counter
+@set_request_id
 async def show_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает ответ на карточке."""
     query = update.callback_query
@@ -175,6 +178,7 @@ async def show_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 @increment_callbacks_counter
+@set_request_id
 async def handle_self_evaluation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -209,6 +213,7 @@ async def handle_self_evaluation(
 
 
 @increment_callbacks_counter
+@set_request_id
 async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Начинает тренировку глаголов с учетом настроек пользователя."""
     query = update.callback_query
@@ -258,6 +263,9 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     f"Не найдено спряжений в активных временах для глагола {verb_candidate.hebrew}. Попытка {i + 1}"
                 )
 
+    logger.warning(
+        f"Could not find a suitable verb for training for user after {VERB_TRAINER_RETRY_ATTEMPTS} retries."
+    )
     if not verb or not conjugation:
         await query.edit_message_text(
             "Не удалось найти подходящий глагол для тренировки. Возможно, для глаголов в вашем словаре нет спряжений в выбранных временах.",
@@ -281,6 +289,7 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 @increment_messages_counter
+@set_request_id
 async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Проверяет ответ пользователя в тренировке глаголов."""
     correct_answer = context.user_data.get("answer")
@@ -290,7 +299,15 @@ async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_answer_normalized = normalize_hebrew(update.message.text)
     correct_answer_normalized = normalize_hebrew(correct_answer.hebrew_form)
 
-    if user_answer_normalized == correct_answer_normalized:
+    is_correct = user_answer_normalized == correct_answer_normalized
+    logger.info(
+        f"Verb training check. "
+        f"User answer: '{user_answer_normalized}', "
+        f"Correct answer: '{correct_answer_normalized}', "
+        f"Result: {'CORRECT' if is_correct else 'INCORRECT'}"
+    )
+
+    if is_correct:
         reply_text = f"✅ Верно!\n\n*{correct_answer.hebrew_form}* [{correct_answer.transcription}]"
     else:
         reply_text = f"❌ Ошибка.\n\nПравильный ответ: *{correct_answer.hebrew_form}* [{correct_answer.transcription}]"
@@ -321,6 +338,7 @@ async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 @increment_callbacks_counter
+@set_request_id
 async def end_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Принудительно завершает любую тренировку."""
     query = update.callback_query

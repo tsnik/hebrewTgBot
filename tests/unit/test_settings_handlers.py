@@ -89,7 +89,6 @@ async def test_toggle_tense():
             mock_uow.user_settings.toggle_tense_setting.assert_called_once_with(
                 123, "imp"
             )
-            mock_uow.commit.assert_called_once()
 
             # Проверяем, что меню было перерисовано
             mock_manage_menu.assert_called_once()

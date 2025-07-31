@@ -15,13 +15,14 @@ from config import (
     logger,
 )
 from services.parser import fetch_and_cache_word_data
-from utils import normalize_hebrew
+from utils import normalize_hebrew, set_request_id
 from handlers.common import display_word_card
 from dal.unit_of_work import UnitOfWork
 from metrics import increment_callbacks_counter, increment_messages_counter
 
 
 @increment_messages_counter
+@set_request_id
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Основной обработчик текстовых сообщений для поиска слов."""
     if "queue" in context.user_data:
@@ -52,6 +53,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Случай 1.1: Нет совпадений в локальной БД
     if not found_words:
+        logger.info(
+            f"No local match for '{normalized_text}'. Starting external search."
+        )
         await search_in_pealim(update, context, normalized_text)
         return
 
@@ -70,6 +74,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Случай 1.3: Несколько совпадений
     if len(found_words) > 1:
+        logger.info(
+            f"Found {len(found_words)} local matches for '{normalized_text}'. Displaying selection."
+        )
         message_text = "Найдено несколько вариантов. Выберите нужный:"
         keyboard = []
         for word in found_words:
@@ -177,6 +184,7 @@ async def search_in_pealim(
 
 
 @increment_callbacks_counter
+@set_request_id
 async def pealim_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик кнопки 'Искать еще в Pealim'."""
     query_data = update.callback_query.data.split(":")
@@ -185,15 +193,18 @@ async def pealim_search_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 @increment_callbacks_counter
+@set_request_id
 async def select_word_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик выбора одного из нескольких найденных слов."""
     query = update.callback_query
     await query.answer()
 
-    logger.info(query.data)
-
     _, _, word_id_str, search_query = query.data.split(":")
     word_id = int(word_id_str)
+
+    logger.info(
+        f"User selected word_id={word_id} from search results for query='{search_query}'."
+    )
 
     user_id = query.from_user.id
     chat_id = query.message.chat_id
@@ -217,6 +228,7 @@ async def select_word_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 @increment_callbacks_counter
+@set_request_id
 async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик нажатия кнопки 'Добавить'."""
     query = update.callback_query
@@ -243,6 +255,7 @@ async def add_word_to_dictionary(update: Update, context: ContextTypes.DEFAULT_T
 
 
 @increment_callbacks_counter
+@set_request_id
 async def show_verb_conjugations(
     update: Update, context: ContextTypes.DEFAULT_TYPE, show_all: bool = False
 ):
@@ -339,6 +352,7 @@ async def show_verb_conjugations(
 
 
 @increment_callbacks_counter
+@set_request_id
 async def show_all_verb_forms_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -347,6 +361,7 @@ async def show_all_verb_forms_handler(
 
 
 @increment_callbacks_counter
+@set_request_id
 async def view_word_card_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик для возврата к карточке слова (например, со страницы спряжений)."""
     query = update.callback_query

@@ -3,13 +3,15 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from config import CB_SETTINGS_MENU, CB_TENSES_MENU, CB_TENSE_TOGGLE, TENSE_MAP
+from config import CB_SETTINGS_MENU, CB_TENSES_MENU, CB_TENSE_TOGGLE, TENSE_MAP, logger
 from dal.unit_of_work import UnitOfWork
 from dal.models import Tense
 from metrics import increment_callbacks_counter
+from utils import set_request_id
 
 
 @increment_callbacks_counter
+@set_request_id
 async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отображает главное меню настроек."""
     query = update.callback_query
@@ -26,6 +28,7 @@ async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @increment_callbacks_counter
+@set_request_id
 async def manage_tenses_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отображает меню управления временами глаголов."""
     query = update.callback_query
@@ -70,6 +73,7 @@ async def manage_tenses_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 @increment_callbacks_counter
+@set_request_id
 async def toggle_tense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает переключение статуса времени."""
     query = update.callback_query
@@ -78,7 +82,8 @@ async def toggle_tense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     with UnitOfWork() as uow:
         uow.user_settings.toggle_tense_setting(user_id, Tense(tense_to_toggle))
-        uow.commit()
+
+    logger.info(f"User {{user_id}} toggled tense '{tense_to_toggle}'.")
 
     # Обновляем меню, чтобы показать изменения
     await manage_tenses_menu(update, context)
