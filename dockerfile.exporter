@@ -1,0 +1,11 @@
+# Используем легковесный образ Python
+FROM python:3.10-slim
+
+# Устанавливаем зависимость
+RUN pip install prometheus-client
+
+# Копируем наш скрипт внутрь образа
+COPY exporter.py /
+
+# Команда для запуска скрипта при старте контейнера
+CMD ["python", "/exporter.py"]
