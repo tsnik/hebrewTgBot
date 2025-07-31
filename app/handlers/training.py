@@ -27,13 +27,14 @@ from config import (
     TENSE_MAP,
 )
 from dal.unit_of_work import UnitOfWork
-from utils import normalize_hebrew
+from utils import normalize_hebrew, set_request_id
 from metrics import increment_callbacks_counter, increment_messages_counter
 
 # --- Вход в меню тренировок ---
 
 
 @increment_callbacks_counter
+@set_request_id
 async def training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Отображает меню выбора режима тренировки."""
     query = update.callback_query
@@ -77,6 +78,7 @@ async def training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 
 @increment_callbacks_counter
+@set_request_id
 async def start_flashcard_training(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -155,6 +157,7 @@ async def show_next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 @increment_callbacks_counter
+@set_request_id
 async def show_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Показывает ответ на карточке."""
     query = update.callback_query
@@ -175,6 +178,7 @@ async def show_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 @increment_callbacks_counter
+@set_request_id
 async def handle_self_evaluation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -209,6 +213,7 @@ async def handle_self_evaluation(
 
 
 @increment_callbacks_counter
+@set_request_id
 async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Начинает тренировку глаголов с учетом настроек пользователя."""
     query = update.callback_query
@@ -281,6 +286,7 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 @increment_messages_counter
+@set_request_id
 async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Проверяет ответ пользователя в тренировке глаголов."""
     correct_answer = context.user_data.get("answer")
@@ -321,6 +327,7 @@ async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 @increment_callbacks_counter
+@set_request_id
 async def end_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Принудительно завершает любую тренировку."""
     query = update.callback_query

@@ -2,6 +2,47 @@
 
 import re
 from typing import List, Dict, Any
+import uuid
+from functools import wraps
+from config import logger
+from context import request_id_var, username_var, handler_name_var
+
+
+def set_request_id(func):
+    """
+    Декоратор, который генерирует уникальный ID для каждого вызова
+    обработчика и сохраняет его в ContextVar.
+    """
+
+    @wraps(func)
+    async def wrapper(update, context, *args, **kwargs):
+        # --- 1. Генерируем ID (как и раньше) ---
+        request_id = str(uuid.uuid4())[:8]
+        handler_name = func.__name__  # <-- Получаем имя функции-хендлера
+
+        # --- 2. Извлекаем имя пользователя ---
+        username = "-"
+        if update and hasattr(update, "effective_user") and update.effective_user:
+            username = (
+                update.effective_user.username or f"user_id_{update.effective_user.id}"
+            )
+
+        # --- 3. Устанавливаем ОБА значения в свои ContextVar ---
+        req_id_token = request_id_var.set(request_id)
+        username_token = username_var.set(username)
+        handler_token = handler_name_var.set(handler_name)
+
+        logger.info(f"Request started for user: {username}")
+        try:
+            return await func(update, context, *args, **kwargs)
+        finally:
+            logger.info("Request finished")
+            # --- 4. Сбрасываем ОБА значения ---
+            request_id_var.reset(req_id_token)
+            username_var.reset(username_token)
+            handler_name_var.reset(handler_token)
+
+    return wrapper
 
 
 def normalize_hebrew(text: str) -> str:

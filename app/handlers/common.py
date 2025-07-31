@@ -20,8 +20,10 @@ from config import (
 from dal.unit_of_work import UnitOfWork
 from dal.models import CachedWord
 from metrics import increment_callbacks_counter
+from utils import set_request_id
 
 
+@set_request_id
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start."""
     user = update.effective_user
@@ -41,6 +43,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @increment_callbacks_counter
+@set_request_id
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Возвращает пользователя в главное меню."""
     query = update.callback_query
@@ -200,6 +203,7 @@ async def display_word_card(
 
 
 @increment_callbacks_counter
+@set_request_id
 async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Завершает диалог и возвращает в главное меню."""
     await main_menu(update, context)

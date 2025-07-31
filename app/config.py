@@ -3,6 +3,8 @@
 import os
 import logging
 from dotenv import load_dotenv
+from pythonjsonlogger import jsonlogger
+from context import RequestIdFilter
 
 # --- ЗАГРУЗКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ ---
 load_dotenv()
@@ -20,10 +22,26 @@ VERB_TRAINER_RETRY_ATTEMPTS = 3
 DICT_WORDS_PER_PAGE = 5  # <--- ДОБАВЛЕНА КОНСТАНТА
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+
+request_id_filter = RequestIdFilter()
+
+LOG_LEVEL_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_LEVEL = logging.getLevelName(LOG_LEVEL_NAME)
+if not isinstance(LOG_LEVEL, int):
+    print(f"Warning: Invalid log level '{LOG_LEVEL_NAME}'. Defaulting to INFO.")
+    LOG_LEVEL = logging.INFO
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter(
+    "%(asctime)s %(name)s %(levelname)s %(message)s", json_ensure_ascii=False
 )
+logHandler.setFormatter(formatter)
+
 logger = logging.getLogger(__name__)
+logger.addHandler(logHandler)
+logger.setLevel(LOG_LEVEL)
+logger.addFilter(request_id_filter)
+logger.info(f"Logging level set to {LOG_LEVEL_NAME}")
+
 
 # --- СОСТОЯНИЯ ДЛЯ CONVERSATION HANDLER ---
 (
