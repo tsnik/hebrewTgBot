@@ -15,10 +15,10 @@ from config import (
     CB_SHOW_VERB,
     CB_SEARCH_PEALIM,
     CB_SETTINGS_MENU,
-    BINYAN_MAP,
 )
-from dal.unit_of_work import UnitOfWork
 from dal.models import CachedWord
+from dal.unit_of_work import UnitOfWork
+from handlers.card_formatters import get_card_formatter
 from metrics import increment_callbacks_counter
 from utils import set_request_id
 
@@ -103,36 +103,10 @@ async def display_word_card(
         f"{card_text_header} [{word_data.transcription}]\nПеревод: {translation_str}\n"
     )
 
-    # --- НОВАЯ ЛОГИКА ОТОБРАЖЕНИЯ ДАННЫХ ---
-    pos = word_data.part_of_speech
-    if pos == "verb":
-        if word_data.root:
-            card_text += f"\nКорень: {word_data.root}"
-        if word_data.binyan:
-            display_binyan = BINYAN_MAP.get(
-                word_data.binyan, word_data.binyan
-            ).capitalize()
-            card_text += f"\nБиньян: {display_binyan}"
-    elif pos == "noun":
-        if word_data.gender:
-            gender_display = (
-                "Мужской род" if word_data.gender == "masculine" else "Женский род"
-            )
-            card_text += f"\nРод: {gender_display}"
-        if word_data.singular_form:
-            card_text += f"\nЕд. число: {word_data.singular_form}"
-        if word_data.plural_form:
-            card_text += f"\nМн. число: {word_data.plural_form}"
-    elif pos == "adjective":
-        card_text += "\n*Формы:*"
-        if word_data.masculine_singular:
-            card_text += f"\nм.р., ед.ч.: {word_data.masculine_singular}"
-        if word_data.feminine_singular:
-            card_text += f"\nж.р., ед.ч.: {word_data.feminine_singular}"
-        if word_data.masculine_plural:
-            card_text += f"\nм.р., мн.ч.: {word_data.masculine_plural}"
-        if word_data.feminine_plural:
-            card_text += f"\nж.р., мн.ч.: {word_data.feminine_plural}"
+    # --- ИСПОЛЬЗОВАНИЕ СТРАТЕГИИ ФОРМАТИРОВАНИЯ ---
+    formatter = get_card_formatter(word_data.part_of_speech)
+    if formatter:
+        card_text += formatter.format(word_data)
 
     card_text = card_text.strip()
     # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
