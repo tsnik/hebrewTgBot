@@ -9,9 +9,12 @@ from urllib.parse import quote, urljoin
 import httpx
 from bs4 import BeautifulSoup, Tag
 
+from pydantic import ValidationError
+
 from config import logger, PARSING_TIMEOUT
 from dal.unit_of_work import UnitOfWork
 from utils import normalize_hebrew, parse_translations
+from dal.models import CreateCachedWord, CreateTranslation, CreateVerbConjugation
 
 # --- УПРАВЛЕНИЕ КОНКУРЕНТНЫМ ПАРСИНГОМ ---
 PARSING_EVENTS: Dict[str, asyncio.Event] = {}
@@ -419,26 +422,39 @@ def _parse_single_word_page(soup: BeautifulSoup) -> Optional[Dict]:
         for conj in parsed_data["conjugations"]:
             conj["normalized_hebrew_form"] = normalize_hebrew(conj["hebrew_form"])
 
-    word_to_create = {
-        "hebrew": parsed_data["hebrew"],
-        "normalized_hebrew": parsed_data["normalized_hebrew"],
-        "transcription": parsed_data.get("transcription"),
-        "is_verb": parsed_data.get("is_verb", False),
-        "part_of_speech": parsed_data.get("part_of_speech"),
-        "root": parsed_data.get("root"),
-        "binyan": parsed_data.get("binyan"),
-        "translations": parsed_data.get("translations", []),
-        "conjugations": parsed_data.get("conjugations", []),
-        "gender": parsed_data.get("gender"),
-        "singular_form": parsed_data.get("singular_form"),
-        "plural_form": parsed_data.get("plural_form"),
-        "masculine_singular": parsed_data.get("masculine_singular"),
-        "feminine_singular": parsed_data.get("feminine_singular"),
-        "masculine_plural": parsed_data.get("masculine_plural"),
-        "feminine_plural": parsed_data.get("feminine_plural"),
-    }
+    parsed_translations = [
+        CreateTranslation(**t) for t in parsed_data.get("translations", [])
+    ]
+    parsed_conjugations = [
+        CreateVerbConjugation(**c) for c in parsed_data.get("conjugations", [])
+    ]
 
-    return word_to_create
+    try:
+        # Полная и явная инициализация модели
+        word_model = CreateCachedWord(
+            hebrew=parsed_data["hebrew"],
+            normalized_hebrew=parsed_data["normalized_hebrew"],
+            transcription=parsed_data.get("transcription"),
+            part_of_speech=parsed_data.get("part_of_speech"),
+            root=parsed_data.get("root"),
+            binyan=parsed_data.get("binyan"),
+            translations=parsed_translations,
+            conjugations=parsed_conjugations,
+            gender=parsed_data.get("gender"),
+            singular_form=parsed_data.get("singular_form"),
+            plural_form=parsed_data.get("plural_form"),
+            masculine_singular=parsed_data.get("masculine_singular"),
+            feminine_singular=parsed_data.get("feminine_singular"),
+            masculine_plural=parsed_data.get("masculine_plural"),
+            feminine_plural=parsed_data.get("feminine_plural"),
+        )
+        return word_model
+
+    except ValidationError as e:
+        logger.error(
+            f"Ошибка валидации данных после парсинга для слова '{parsed_data.get('hebrew')}': {e}"
+        )
+        return None
 
 
 async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, List[Dict]]:
@@ -525,37 +541,38 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, List[Dict]]:
                 )
                 return "error", None
 
+        word_ids = []
+
         with UnitOfWork() as uow:
             for word_data in parsed_data_list:
                 # Проверка на дубликаты перед созданием
                 existing_words = uow.words.find_words_by_normalized_form(
-                    word_data["normalized_hebrew"]
+                    word_data.normalized_hebrew
                 )
-                is_duplicate = any(
-                    w.hebrew == word_data["hebrew"] for w in existing_words
-                )
+                is_duplicate = any(w.hebrew == word_data.hebrew for w in existing_words)
 
                 if not is_duplicate:
-                    word_data["word_id"] = uow.words.create_cached_word(**word_data)
+                    word_id = uow.words.create_cached_word(word_data)
+                    word_ids.append(word_id)
                     logger.debug(
-                        f'{{"event": "word_cached_to_db", "word_id": {word_data["word_id"]}, "hebrew": "{word_data["hebrew"]}"}}'
+                        f'{{"event": "word_cached_to_db", "word_id": {word_id}, "hebrew": "{word_data.hebrew}"}}'
                     )
                 else:
                     # Если слово уже есть, находим его ID для возврата
                     existing_word = next(
-                        (w for w in existing_words if w.hebrew == word_data["hebrew"]),
+                        (w for w in existing_words if w.hebrew == word_data.hebrew),
                         None,
                     )
                     if existing_word:
-                        word_data["word_id"] = existing_word.word_id
+                        word_id = existing_word.word_id
+                        word_ids.append(word_id)
 
         final_words_data = []
         with UnitOfWork() as uow:
-            for word_data in parsed_data_list:
-                if "word_id" in word_data:
-                    result = uow.words.get_word_by_id(word_data["word_id"])
-                    if result:
-                        final_words_data.append(result)
+            for word_id in word_ids:
+                result = uow.words.get_word_by_id(word_id)
+                if result:
+                    final_words_data.append(result)
 
         logger.info(
             f'{{"event": "fetch_success", "status": "ok", "final_count": {len(final_words_data)}}}'

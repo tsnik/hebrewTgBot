@@ -6,79 +6,157 @@ import asyncio
 
 from services.parser import fetch_and_cache_word_data, PARSING_EVENTS
 from utils import normalize_hebrew
-from dal.models import CachedWord
+from dal.models import (
+    CachedWord,
+    CreateCachedWord,
+    PartOfSpeech,
+    CreateTranslation,
+    Binyan,
+    Translation,
+)
 from datetime import datetime
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_fetch_and_cache_word_data_search_hit(monkeypatch):
+async def test_fetch_and_cache_new_word_successfully(monkeypatch):
+    """
+    Тест: успешное получение, парсинг (замоканный) и кэширование нового слова.
+    Фокус: проверка, что `create_cached_word` вызывается с правильными данными.
+    """
     search_word = "כותב"
-    final_word = "לִכְתּוֹב"
+    final_hebrew_word = "לִכְתּוֹב"
     search_url = f"https://www.pealim.com/ru/search/?q={search_word}"
-    dict_url = "https://www.pealim.com/ru/dict/1/"
+    dict_url = "https://www.pealim.com/ru/dict/1-lichtov/"
+    word_html = "<html><body>Some content</body></html>"
 
-    search_html = f"<html><body><div class='verb-search-lemma'><a href='{dict_url}'></a></div></body></html>"
+    # Мокируем HTTP-ответы
+    respx.get(search_url).mock(
+        return_value=httpx.Response(302, headers={"location": dict_url})
+    )
+    respx.get(dict_url).mock(return_value=httpx.Response(200, text=word_html))
 
-    respx.get(search_url).mock(return_value=httpx.Response(200, text=search_html))
-    respx.get(dict_url).mock(return_value=httpx.Response(200, text=verb_html_fixture()))
-
-    mock_uow = MagicMock()
-    mock_word = CachedWord(
-        word_id=10,
-        hebrew=final_word,
-        normalized_hebrew=final_word,
-        fetched_at=datetime.now(),
+    # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Мокируем результат парсинга ---
+    mock_parsed_object = CreateCachedWord(
+        hebrew=final_hebrew_word,
+        normalized_hebrew=normalize_hebrew(final_hebrew_word),
+        transcription="likhtov",
+        part_of_speech=PartOfSpeech.VERB,
+        binyan=Binyan.PAAL,
+        root="כ-ת-ב",
+        translations=[CreateTranslation(translation_text="to write", is_primary=True)],
+    )
+    monkeypatch.setattr(
+        "services.parser._parse_single_word_page",
+        MagicMock(return_value=mock_parsed_object),
     )
 
-    # First call to find_word_by_normalized_form returns None, second call returns the mock_word
-    mock_uow.__enter__().words.find_word_by_normalized_form.return_value = None
-    mock_uow.__enter__().words.get_word_by_id.return_value = mock_word
+    # Настраиваем мок UnitOfWork
+    mock_uow = MagicMock()
+    mock_uow.__enter__().words.find_words_by_normalized_form.return_value = []
+    mock_uow.__enter__().words.create_cached_word.return_value = 10
 
+    # Создаем ПОЛНОСТЬЮ ВАЛИДНЫЙ объект CachedWord для возврата из get_word_by_id
+    final_word_from_db = CachedWord(
+        word_id=10,
+        fetched_at=datetime.now(),
+        hebrew=mock_parsed_object.hebrew,
+        normalized_hebrew=mock_parsed_object.normalized_hebrew,
+        transcription=mock_parsed_object.transcription,
+        part_of_speech=mock_parsed_object.part_of_speech,
+        binyan=mock_parsed_object.binyan,
+        root=mock_parsed_object.root,
+        translations=[
+            Translation(
+                translation_id=1,
+                word_id=10,
+                translation_text="to write",
+                is_primary=True,
+            )
+        ],
+    )
+    mock_uow.__enter__().words.get_word_by_id.return_value = final_word_from_db
     monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
 
+    # --- Выполнение ---
     status, data = await fetch_and_cache_word_data(search_word)
 
+    # --- Проверки ---
     assert status == "ok"
-    assert len(data) > 0
-    assert data[0].hebrew == final_word
-    mock_uow.__enter__().words.create_cached_word.assert_called_once()
+    assert len(data) == 1
+    assert data[0].word_id == 10
+    assert data[0].hebrew == final_hebrew_word
+    mock_uow.__enter__().words.create_cached_word.assert_called_once_with(
+        mock_parsed_object
+    )
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_fetch_and_cache_word_data_search_hit_word_already_in_cache(monkeypatch):
+async def test_fetch_and_cache_word_already_in_cache(monkeypatch):
+    """
+    Тест: слово найдено в кэше после парсинга, `create_cached_word` НЕ вызывается.
+    """
     search_word = "כותב"
-    final_word = "לִכְתּוֹב"
+    final_hebrew_word = "לִכְתּוֹב"
     search_url = f"https://www.pealim.com/ru/search/?q={search_word}"
-    dict_url = "https://www.pealim.com/ru/dict/1/"
+    dict_url = "https://www.pealim.com/ru/dict/1-lichtov/"
+    word_html = "<html><body>Some content</body></html>"
 
-    search_html = f"<html><body><div class='verb-search-lemma'><a href='{dict_url}'></a></div></body></html>"
+    # ИСПРАВЛЕНИЕ: Добавляем мок для второго запроса, который возникает после редиректа.
+    respx.get(search_url).mock(
+        return_value=httpx.Response(302, headers={"location": dict_url})
+    )
+    respx.get(dict_url).mock(return_value=httpx.Response(200, text=word_html))
 
-    respx.get(search_url).mock(return_value=httpx.Response(200, text=search_html))
-    respx.get(dict_url).mock(return_value=httpx.Response(200, text=verb_html_fixture()))
-
-    mock_uow = MagicMock()
-    mock_word = CachedWord(
-        word_id=10,
-        hebrew=final_word,
-        normalized_hebrew=final_word,
-        fetched_at=datetime.now(),
+    # Мокируем результат парсинга
+    mock_parsed_object = CreateCachedWord(
+        hebrew=final_hebrew_word,
+        normalized_hebrew=normalize_hebrew(final_hebrew_word),
+        transcription="likhtov",
+        part_of_speech=PartOfSpeech.VERB,
+        translations=[CreateTranslation(translation_text="to write", is_primary=True)],
+    )
+    monkeypatch.setattr(
+        "services.parser._parse_single_word_page",
+        MagicMock(return_value=mock_parsed_object),
     )
 
-    # First call to find_word_by_normalized_form returns None, second call returns the mock_word
-    mock_uow.__enter__().words.find_word_by_normalized_form.return_value = None
-    mock_uow.__enter__().words.find_words_by_normalized_form.return_value = [mock_word]
-    mock_uow.__enter__().words.create_cached_word.return_value = 1
-    mock_uow.__enter__().words.get_word_by_id.return_value = mock_word
+    # Настраиваем мок UnitOfWork
+    mock_uow = MagicMock()
 
+    existing_word_in_db = CachedWord(
+        word_id=10,
+        fetched_at=datetime.now(),
+        hebrew=mock_parsed_object.hebrew,
+        normalized_hebrew=mock_parsed_object.normalized_hebrew,
+        transcription=mock_parsed_object.transcription,
+        part_of_speech=mock_parsed_object.part_of_speech,
+        translations=[
+            Translation(
+                translation_id=1,
+                word_id=10,
+                translation_text="to write",
+                is_primary=True,
+            )
+        ],
+    )
+    mock_uow.__enter__().words.find_words_by_normalized_form.return_value = [
+        existing_word_in_db
+    ]
+    mock_uow.__enter__().words.get_word_by_id.return_value = existing_word_in_db
     monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
 
+    # Выполнение
     status, data = await fetch_and_cache_word_data(search_word)
 
+    # Проверки
     assert status == "ok"
-    assert len(data) > 0
-    assert data[0].hebrew == final_word
+    assert len(data) == 1
+    assert data[0].word_id == 10
+    mock_uow.__enter__().words.get_word_by_id.assert_called_once_with(
+        existing_word_in_db.word_id
+    )
     mock_uow.__enter__().words.create_cached_word.assert_not_called()
 
 
@@ -178,10 +256,21 @@ async def test_fetch_and_cache_word_data_concurrent_parsing(monkeypatch):
 
     # --- Настройка моков ---
     mock_uow = MagicMock()
-    mock_word_obj = MagicMock()
-    # model_dump() должен возвращать словарь, который будет итоговым результатом
-    mock_word_obj.hebrew = search_word
-    mock_word_obj.normalized_hebrew = normalized_word
+    mock_word_obj = CachedWord(
+        word_id=1,
+        hebrew=search_word,
+        normalized_hebrew=normalized_word,
+        part_of_speech=PartOfSpeech.VERB,
+        fetched_at=datetime.now(),
+        translations=[
+            Translation(
+                translation_id=1,
+                word_id=1,
+                translation_text="to write",
+                is_primary=True,
+            )
+        ],
+    )
 
     # Настраиваем поведение мока базы данных:
     # 1. Первый вызов (до ожидания) -> слово не найдено (None).
