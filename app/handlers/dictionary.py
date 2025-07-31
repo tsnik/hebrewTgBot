@@ -11,6 +11,7 @@ from config import (
     CB_DICT_CONFIRM_DELETE,
     CB_DICT_EXECUTE_DELETE,
     DICT_WORDS_PER_PAGE,
+    logger,
 )
 from dal.unit_of_work import UnitOfWork
 from metrics import increment_callbacks_counter
@@ -70,6 +71,9 @@ async def view_dictionary_page_logic(
 
     # Если страница пуста после удаления, переходим на предыдущую
     if not words_on_page and page > 0:
+        logger.info(
+            f"Page {page} is empty after deletion, redirecting to page {page - 1}."
+        )
         return await view_dictionary_page_logic(
             update, context, page=page - 1, deletion_mode=False
         )
@@ -188,9 +192,12 @@ async def execute_delete_word(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     _, _, word_id_str, page_str = query.data.split(":")
     word_id, page = int(word_id_str), int(page_str)
+    user_id = query.from_user.id
+
+    logger.info(f"User {{{user_id}}} is deleting word {{{word_id}}}.")
 
     with UnitOfWork() as uow:
-        uow.user_dictionary.remove_word_from_dictionary(query.from_user.id, word_id)
+        uow.user_dictionary.remove_word_from_dictionary(user_id, word_id)
         uow.commit()
 
     # Перерисовываем страницу словаря, исключая удаленное слово

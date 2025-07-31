@@ -53,6 +53,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Случай 1.1: Нет совпадений в локальной БД
     if not found_words:
+        logger.info(
+            f"No local match for '{normalized_text}'. Starting external search."
+        )
         await search_in_pealim(update, context, normalized_text)
         return
 
@@ -71,6 +74,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Случай 1.3: Несколько совпадений
     if len(found_words) > 1:
+        logger.info(
+            f"Found {len(found_words)} local matches for '{normalized_text}'. Displaying selection."
+        )
         message_text = "Найдено несколько вариантов. Выберите нужный:"
         keyboard = []
         for word in found_words:

@@ -6,7 +6,7 @@ import sqlite3
 from types import TracebackType
 from typing import Optional, Type
 
-from config import DB_NAME
+from config import DB_NAME, logger
 from dal.repositories import (
     WordRepository,
     UserDictionaryRepository,
@@ -58,6 +58,9 @@ class UnitOfWork(AbstractUnitOfWork):
         traceback: Optional[TracebackType],
     ):
         if exc_type:
+            logger.warning(
+                "Exception occurred, rolling back transaction.", exc_info=True
+            )
             self.rollback()
         elif self.connection:
             self.commit()

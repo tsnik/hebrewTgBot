@@ -263,6 +263,9 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     f"Не найдено спряжений в активных временах для глагола {verb_candidate.hebrew}. Попытка {i + 1}"
                 )
 
+    logger.warning(
+        f"Could not find a suitable verb for training for user after {VERB_TRAINER_RETRY_ATTEMPTS} retries."
+    )
     if not verb or not conjugation:
         await query.edit_message_text(
             "Не удалось найти подходящий глагол для тренировки. Возможно, для глаголов в вашем словаре нет спряжений в выбранных временах.",
@@ -296,7 +299,15 @@ async def check_verb_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_answer_normalized = normalize_hebrew(update.message.text)
     correct_answer_normalized = normalize_hebrew(correct_answer.hebrew_form)
 
-    if user_answer_normalized == correct_answer_normalized:
+    is_correct = user_answer_normalized == correct_answer_normalized
+    logger.info(
+        f"Verb training check. "
+        f"User answer: '{user_answer_normalized}', "
+        f"Correct answer: '{correct_answer_normalized}', "
+        f"Result: {'CORRECT' if is_correct else 'INCORRECT'}"
+    )
+
+    if is_correct:
         reply_text = f"✅ Верно!\n\n*{correct_answer.hebrew_form}* [{correct_answer.transcription}]"
     else:
         reply_text = f"❌ Ошибка.\n\nПравильный ответ: *{correct_answer.hebrew_form}* [{correct_answer.transcription}]"
