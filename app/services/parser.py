@@ -6,10 +6,10 @@ from urllib.parse import quote, urljoin
 
 import httpx
 from bs4 import BeautifulSoup
-from pydantic import ValidationError
+from pydantic import ValidationError, TypeAdapter
 
 from config import logger, PARSING_TIMEOUT
-from dal.models import CreateCachedWord, CreateTranslation, CreateVerbConjugation
+from dal.models import CreateCachedWord
 from dal.unit_of_work import UnitOfWork
 from services.parsing_strategies import (
     get_parsing_strategy,
@@ -122,34 +122,14 @@ def _create_word_model_from_parsed_data(
             logger.error("Critical error: parsed_data is missing 'hebrew' key.")
             return None
 
-        normalized_hebrew = normalize_hebrew(hebrew)
-        parsed_data["normalized_hebrew"] = normalized_hebrew
-
+        parsed_data["normalized_hebrew"] = normalize_hebrew(parsed_data["hebrew"])
         if parsed_data.get("conjugations"):
             for conj in parsed_data["conjugations"]:
                 conj["normalized_hebrew_form"] = normalize_hebrew(conj["hebrew_form"])
 
-        return CreateCachedWord(
-            hebrew=hebrew,
-            normalized_hebrew=normalized_hebrew,
-            transcription=parsed_data.get("transcription"),
-            part_of_speech=parsed_data.get("part_of_speech"),
-            root=parsed_data.get("root"),
-            binyan=parsed_data.get("binyan"),
-            translations=[
-                CreateTranslation(**t) for t in parsed_data.get("translations", [])
-            ],
-            conjugations=[
-                CreateVerbConjugation(**c) for c in parsed_data.get("conjugations", [])
-            ],
-            gender=parsed_data.get("gender"),
-            singular_form=parsed_data.get("singular_form"),
-            plural_form=parsed_data.get("plural_form"),
-            masculine_singular=parsed_data.get("masculine_singular"),
-            feminine_singular=parsed_data.get("feminine_singular"),
-            masculine_plural=parsed_data.get("masculine_plural"),
-            feminine_plural=parsed_data.get("feminine_plural"),
-        )
+        adapter = TypeAdapter(CreateCachedWord)
+        validated_model = adapter.validate_python(parsed_data)
+        return validated_model
     except ValidationError as e:
         logger.error(
             f"Ошибка валидации данных после парсинга для слова '{parsed_data.get('hebrew')}': {e}"
