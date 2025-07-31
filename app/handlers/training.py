@@ -262,11 +262,10 @@ async def start_verb_trainer(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 logger.warning(
                     f"Не найдено спряжений в активных временах для глагола {verb_candidate.hebrew}. Попытка {i + 1}"
                 )
-
-    logger.warning(
-        f"Could not find a suitable verb for training for user after {VERB_TRAINER_RETRY_ATTEMPTS} retries."
-    )
     if not verb or not conjugation:
+        logger.warning(
+            f"Could not find a suitable verb for training for user after {VERB_TRAINER_RETRY_ATTEMPTS} retries."
+        )
         await query.edit_message_text(
             "Не удалось найти подходящий глагол для тренировки. Возможно, для глаголов в вашем словаре нет спряжений в выбранных временах.",
             reply_markup=InlineKeyboardMarkup(

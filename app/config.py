@@ -41,6 +41,7 @@ logger.addHandler(logHandler)
 logger.setLevel(LOG_LEVEL)
 logger.addFilter(request_id_filter)
 logger.info(f"Logging level set to {LOG_LEVEL_NAME}")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 # --- СОСТОЯНИЯ ДЛЯ CONVERSATION HANDLER ---
