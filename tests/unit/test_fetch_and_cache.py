@@ -8,11 +8,14 @@ from services.parser import fetch_and_cache_word_data, PARSING_EVENTS
 from utils import normalize_hebrew
 from dal.models import (
     CachedWord,
-    CreateCachedWord,
+    CreateVerb,
     PartOfSpeech,
     CreateTranslation,
+    CreateVerbConjugation,
     Binyan,
     Translation,
+    Tense,
+    Person,
 )
 from datetime import datetime
 
@@ -36,8 +39,18 @@ async def test_fetch_and_cache_new_word_successfully(monkeypatch):
     )
     respx.get(dict_url).mock(return_value=httpx.Response(200, text=word_html))
 
+    conjugations = [
+        CreateVerbConjugation(
+            tense=Tense.PRESENT,
+            person=Person.MS,
+            hebrew_form="כּוֹתֵב",
+            normalized_hebrew_form="כותב",
+            transcription="kotev",
+        )
+    ]
+
     # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Мокируем результат парсинга ---
-    mock_parsed_object = CreateCachedWord(
+    mock_parsed_object = CreateVerb(
         hebrew=final_hebrew_word,
         normalized_hebrew=normalize_hebrew(final_hebrew_word),
         transcription="likhtov",
@@ -45,6 +58,7 @@ async def test_fetch_and_cache_new_word_successfully(monkeypatch):
         binyan=Binyan.PAAL,
         root="כ-ת-ב",
         translations=[CreateTranslation(translation_text="to write", is_primary=True)],
+        conjugations=conjugations,
     )
     monkeypatch.setattr(
         "services.parser._parse_single_word_page",
@@ -110,12 +124,23 @@ async def test_fetch_and_cache_word_already_in_cache(monkeypatch):
     respx.get(dict_url).mock(return_value=httpx.Response(200, text=word_html))
 
     # Мокируем результат парсинга
-    mock_parsed_object = CreateCachedWord(
+    conjugations = [
+        CreateVerbConjugation(
+            tense=Tense.PRESENT,
+            person=Person.MS,
+            hebrew_form="כּוֹתֵב",
+            normalized_hebrew_form="כותב",
+            transcription="kotev",
+        )
+    ]
+
+    mock_parsed_object = CreateVerb(
         hebrew=final_hebrew_word,
         normalized_hebrew=normalize_hebrew(final_hebrew_word),
         transcription="likhtov",
         part_of_speech=PartOfSpeech.VERB,
         translations=[CreateTranslation(translation_text="to write", is_primary=True)],
+        conjugations=conjugations,
     )
     monkeypatch.setattr(
         "services.parser._parse_single_word_page",

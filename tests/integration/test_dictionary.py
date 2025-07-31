@@ -7,7 +7,7 @@ from dal.unit_of_work import UnitOfWork
 from config import CB_DICT_VIEW, CB_DICT_EXECUTE_DELETE, DICT_WORDS_PER_PAGE
 
 # Импортируем модели для создания тестовых данных
-from dal.models import CreateCachedWord, CreateTranslation, PartOfSpeech
+from dal.models import CreateTranslation, PartOfSpeech, CreateNoun
 
 
 @pytest.mark.asyncio
@@ -23,7 +23,7 @@ async def test_add_word_to_dictionary(memory_db):
 
     with UnitOfWork() as uow:
         # Используем новую модель для создания слова
-        word_to_create = CreateCachedWord(
+        word_to_create = CreateNoun(
             hebrew="מילה",
             normalized_hebrew="מילה",
             transcription="mila",
@@ -49,22 +49,22 @@ async def test_delete_word_from_dictionary(memory_db):
 
     with UnitOfWork() as uow:
         # Создаем слова с помощью новых моделей
-        word_to_delete_model = CreateCachedWord(
+        word_to_delete_model = CreateNoun(
             hebrew="למחוק",
             normalized_hebrew="למחוק",
             transcription="limkhok",
-            part_of_speech=PartOfSpeech.VERB,
+            part_of_speech=PartOfSpeech.NOUN,
             translations=[
                 CreateTranslation(translation_text="to delete", is_primary=True)
             ],
         )
         word_id_to_delete = uow.words.create_cached_word(word_to_delete_model)
 
-        word_to_keep_model = CreateCachedWord(
+        word_to_keep_model = CreateNoun(
             hebrew="לשמור",
             normalized_hebrew="לשמור",
             transcription="lishmor",
-            part_of_speech=PartOfSpeech.VERB,
+            part_of_speech=PartOfSpeech.NOUN,
             translations=[
                 CreateTranslation(translation_text="to keep", is_primary=True)
             ],
@@ -107,7 +107,7 @@ async def test_view_dictionary_pagination(memory_db):
     with UnitOfWork() as uow:
         uow.user_dictionary.add_user(123, "Test", "testuser")
         for i in range(DICT_WORDS_PER_PAGE + 1):
-            word_model = CreateCachedWord(
+            word_model = CreateNoun(
                 hebrew=f"מילה{i}",
                 normalized_hebrew=f"מילה{i}",
                 transcription=f"mila{i}",

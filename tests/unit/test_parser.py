@@ -3,11 +3,11 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import unicodedata
 
-from services.parser import (
-    parse_verb_page,
-    parse_noun_or_adjective_page,
-    parse_translations,
+from services.parsing_strategies import (
+    VerbParsingStrategy,
+    NounAdjectiveParsingStrategy,
 )
+from utils import parse_translations
 
 # --- Фикстуры для загрузки реального HTML ---
 
@@ -84,7 +84,8 @@ def test_parse_verb_paal(verb_paal_html: str):
     """Тестирует парсинг стандартной страницы глагола (ПААЛЬ)."""
     soup = BeautifulSoup(verb_paal_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_verb_page(soup, main_header)
+    parser = VerbParsingStrategy()
+    parsed_data = parser.parse(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "verb"
@@ -100,7 +101,8 @@ def test_parse_verb_piel(verb_piel_html: str):
     """Тестирует парсинг стандартной страницы глагола (ПИЭЛЬ)."""
     soup = BeautifulSoup(verb_piel_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_verb_page(soup, main_header)
+    parser = VerbParsingStrategy()
+    parsed_data = parser.parse(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "verb"
@@ -114,7 +116,8 @@ def test_parse_verb_hifil(verb_hifil_html: str):
     """Тестирует парсинг страницы глагола (hИФЪИЛЬ)."""
     soup = BeautifulSoup(verb_hifil_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_verb_page(soup, main_header)
+    parser = VerbParsingStrategy()
+    parsed_data = parser.parse(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "verb"
@@ -131,7 +134,8 @@ def test_parse_verb_nifal(verb_nifal_html: str):
     """Тестирует парсинг страницы глагола (НИФЪАЛЬ)."""
     soup = BeautifulSoup(verb_nifal_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_verb_page(soup, main_header)
+    parser = VerbParsingStrategy()
+    parsed_data = parser.parse(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "verb"
@@ -149,7 +153,8 @@ def test_parse_verb_hitpael(verb_hitpael_html: str):
     """Тестирует парсинг страницы глагола (hИТПАЭЛЬ)."""
     soup = BeautifulSoup(verb_hitpael_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_verb_page(soup, main_header)
+    parser = VerbParsingStrategy()
+    parsed_data = parser.parse(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "verb"
@@ -165,7 +170,8 @@ def test_parse_noun_masculine(noun_masculine_html: str):
     """Тестирует парсинг страницы существительного мужского рода."""
     soup = BeautifulSoup(noun_masculine_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_noun_or_adjective_page(soup, main_header)
+    parser = NounAdjectiveParsingStrategy()
+    parsed_data = parser.parse(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "noun"
@@ -179,7 +185,8 @@ def test_parse_noun_feminine(noun_feminine_html: str):
     """Тестирует парсинг страницы существительного женского рода."""
     soup = BeautifulSoup(noun_feminine_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_noun_or_adjective_page(soup, main_header)
+    parser = NounAdjectiveParsingStrategy()
+    parsed_data = parser.parse(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "noun"
@@ -193,7 +200,8 @@ def test_parse_adjective(adjective_html: str):
     """Тестирует парсинг страницы прилагательного."""
     soup = BeautifulSoup(adjective_html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_noun_or_adjective_page(soup, main_header)
+    parser = NounAdjectiveParsingStrategy()
+    parsed_data = parser.parse(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["part_of_speech"] == "adjective"
@@ -218,7 +226,8 @@ def test_parse_verb_page_missing_elements():
     """
     soup = BeautifulSoup(html, "html.parser")
     main_header = soup.find("h2", class_="page-header")
-    parsed_data = parse_verb_page(soup, main_header)
+    parser = VerbParsingStrategy()
+    parsed_data = parser.parse(soup, main_header)
 
     assert parsed_data is not None
     assert parsed_data["root"] is None
@@ -232,12 +241,14 @@ def test_parser_fails_gracefully():
         "<html><body><h2 class='page-header'>спряжение глагола</h2></body></html>"
     )
     soup_verb = BeautifulSoup(html_verb, "html.parser")
-    assert parse_verb_page(soup_verb, soup_verb.find("h2")) is None
+    parser_verb = VerbParsingStrategy()
+    assert parser_verb.parse(soup_verb, soup_verb.find("h2")) is None
 
     # Существительное без ивритского написания
     html_noun = '<html><body><h2 class="page-header">существительное</h2><div class="lead">table</div></body></html>'
     soup_noun = BeautifulSoup(html_noun, "html.parser")
-    assert parse_noun_or_adjective_page(soup_noun, soup_noun.find("h2")) is None
+    parser_noun = NounAdjectiveParsingStrategy()
+    assert parser_noun.parse(soup_noun, soup_noun.find("h2")) is None
 
 
 # --- Тесты утилиты парсинга переводов ---

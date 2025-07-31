@@ -166,7 +166,7 @@ class WordRepository(BaseRepository):
             cursor.executemany(translations_query, translations_to_insert)
 
         # 3. Вставка спряжений
-        if word_data.conjugations:
+        if hasattr(word_data, "conjugations") and word_data.conjugations:
             conjugations_to_insert = [
                 (
                     word_id,

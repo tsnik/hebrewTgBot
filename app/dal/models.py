@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Literal, Union
 from pydantic import BaseModel
 from datetime import datetime
 from enum import Enum
@@ -110,22 +110,44 @@ class CreateVerbConjugation(BaseModel):
     transcription: str
 
 
-class CreateCachedWord(BaseModel):
+class BaseWordDetails(BaseModel):
+    """Общие поля для всех частей речи."""
+
     hebrew: str
     normalized_hebrew: str
     transcription: Optional[str]
-    part_of_speech: PartOfSpeech
+    translations: List[CreateTranslation]
+
+
+class CreateVerb(BaseWordDetails):
+    """Модель для создания глагола."""
+
+    part_of_speech: Literal[PartOfSpeech.VERB]
     root: Optional[str] = None
     binyan: Optional[Binyan] = None
-    translations: List[CreateTranslation]
     conjugations: List[CreateVerbConjugation] = []
+
+
+class CreateNoun(BaseWordDetails):
+    """Модель для создания существительного."""
+
+    part_of_speech: Literal[PartOfSpeech.NOUN]
     gender: Optional[Gender] = None
     singular_form: Optional[str] = None
     plural_form: Optional[str] = None
+
+
+class CreateAdjective(BaseWordDetails):
+    """Модель для создания прилагательного."""
+
+    part_of_speech: Literal[PartOfSpeech.ADJECTIVE]
     masculine_singular: Optional[str] = None
     feminine_singular: Optional[str] = None
     masculine_plural: Optional[str] = None
     feminine_plural: Optional[str] = None
+
+
+CreateCachedWord = Union[CreateVerb, CreateNoun, CreateAdjective]
 
 
 class UserDictionaryEntry(BaseModel):

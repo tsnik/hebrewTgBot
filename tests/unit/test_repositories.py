@@ -4,7 +4,8 @@ from datetime import datetime
 
 # Импортируем Pydantic-модели для создания данных
 from dal.models import (
-    CreateCachedWord,
+    CreateVerb,
+    CreateNoun,
     CreateTranslation,
     CreateVerbConjugation,
     PartOfSpeech,
@@ -50,7 +51,7 @@ def test_word_repository(memory_db):
         )
     ]
 
-    word_to_create = CreateCachedWord(
+    word_to_create = CreateVerb(
         hebrew="לִכְתּוֹב",
         normalized_hebrew="לכתוב",
         transcription="likhtov",
@@ -90,7 +91,7 @@ def test_srs_level_management(memory_db):
 
     with connection:
         user_repo.add_user(user_id, "SRS", "User")
-        word_to_create = CreateCachedWord(
+        word_to_create = CreateVerb(
             hebrew="לְתַרְגֵּל",
             normalized_hebrew="לתרגל",
             transcription="letargel",
@@ -124,7 +125,7 @@ def test_get_user_words_for_training(memory_db):
         user_repo.add_user(user_id, "Train", "User")
 
         # Добавляем существительное
-        noun_to_create = CreateCachedWord(
+        noun_to_create = CreateNoun(
             hebrew="סֵפֶר",
             normalized_hebrew="ספר",
             transcription="sefer",
@@ -134,8 +135,18 @@ def test_get_user_words_for_training(memory_db):
         noun_id = word_repo.create_cached_word(noun_to_create)
         user_repo.add_word_to_dictionary(user_id, noun_id)
 
+        conjugations = [
+            CreateVerbConjugation(
+                tense=Tense.PRESENT,
+                person=Person.MS,
+                hebrew_form="כּוֹתֵב",
+                normalized_hebrew_form="כותב",
+                transcription="kotev",
+            )
+        ]
+
         # Добавляем глагол (должен быть исключен)
-        verb_to_create = CreateCachedWord(
+        verb_to_create = CreateVerb(
             hebrew="לִקְרוֹא",
             normalized_hebrew="לקרוא",
             transcription="likro",
@@ -145,6 +156,7 @@ def test_get_user_words_for_training(memory_db):
             translations=[
                 CreateTranslation(translation_text="to read", is_primary=True)
             ],
+            conjugations=conjugations,
         )
         verb_id = word_repo.create_cached_word(verb_to_create)
         user_repo.add_word_to_dictionary(user_id, verb_id)
@@ -167,7 +179,7 @@ def test_get_random_verb_for_training(memory_db):
 
     with connection:
         user_repo.add_user(user_id, "Train", "User")
-        verb_to_create = CreateCachedWord(
+        verb_to_create = CreateVerb(
             hebrew="לִלְמוֹד",
             normalized_hebrew="ללמוד",
             transcription="lilmod",
@@ -196,7 +208,7 @@ def test_find_words_by_normalized_form(memory_db):
     repo = WordRepository(connection)
 
     with connection:
-        word_to_create = CreateCachedWord(
+        word_to_create = CreateNoun(
             hebrew="בְּדִיקָה",
             normalized_hebrew="בדיקה",
             transcription="bdika",
@@ -221,7 +233,7 @@ def test_get_word_by_id(memory_db):
     repo = WordRepository(connection)
 
     with connection:
-        word_to_create = CreateCachedWord(
+        word_to_create = CreateVerb(
             hebrew="לִבְדּוֹק",
             normalized_hebrew="לבדוק",
             transcription="livdok",
@@ -254,7 +266,7 @@ def test_user_dictionary_repository(memory_db):
 
     with connection:
         user_repo.add_user(user_id, "Test", "User")
-        word_to_create = CreateCachedWord(
+        word_to_create = CreateNoun(
             hebrew="שֻׁלְחָן",
             normalized_hebrew="שולחן",
             transcription="shulchan",
@@ -292,7 +304,7 @@ def test_word_repository_transaction_rollback(memory_db):
     with pytest.raises(Exception):  # Ловим любую ошибку (Pydantic или TypeError)
         with UnitOfWork() as uow:
             # Пытаемся создать модель с невалидными данными
-            word_to_create = CreateCachedWord(
+            word_to_create = CreateVerb(
                 hebrew="לְהִכָּשֵׁל",
                 normalized_hebrew="להכשל",
                 transcription="lehikashel",
