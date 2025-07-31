@@ -3,9 +3,9 @@ import logging
 from contextvars import ContextVar
 
 # 1. Определяем ContextVar здесь, в независимом файле.
-request_id_var = ContextVar("request_id", default="-")
-username_var = ContextVar("username", default="-")
-handler_name_var = ContextVar("handler_name", default="-")
+request_id_var = ContextVar("request_id", default=None)
+username_var = ContextVar("username", default=None)
+handler_name_var = ContextVar("handler_name", default=None)
 
 
 # 2. Фильтр логгера тоже здесь. Он зависит только от ContextVar.
