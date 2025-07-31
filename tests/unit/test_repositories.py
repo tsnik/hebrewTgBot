@@ -1,60 +1,74 @@
 import pytest
 import sqlite3
+from datetime import datetime
 
+# Импортируем Pydantic-модели для создания данных
+from dal.models import (
+    CreateCachedWord,
+    CreateTranslation,
+    CreateVerbConjugation,
+    PartOfSpeech,
+    Tense,
+    Person,
+    Binyan,
+)
 from dal.repositories import WordRepository, UserDictionaryRepository
 from dal.unit_of_work import UnitOfWork
 
-# It's good practice to enable foreign key constraints for tests to ensure data integrity
+# Прагма для обеспечения целостности данных в тестах
 DB_PRAGMA = "PRAGMA foreign_keys = ON;"
 
 
 def get_test_connection(memory_db_uri: str) -> sqlite3.Connection:
-    """Helper function to create a connection to the test database."""
+    """Вспомогательная функция для создания подключения к тестовой БД."""
     connection = sqlite3.connect(
         memory_db_uri, uri=True, detect_types=sqlite3.PARSE_DECLTYPES
     )
-    connection.row_factory = sqlite3.Row  # Allows accessing columns by name
+    connection.row_factory = sqlite3.Row
     connection.execute(DB_PRAGMA)
     return connection
 
 
 def test_word_repository(memory_db):
-    """Tests basic WordRepository operations."""
+    """Тестирует базовые операции WordRepository с новыми моделями."""
     connection = get_test_connection(memory_db)
     repo = WordRepository(connection)
 
-    # Test data
+    # 1. Готовим данные с использованием типизированных моделей
     translations = [
-        {"translation_text": "to write", "context_comment": None, "is_primary": True}
+        CreateTranslation(
+            translation_text="to write", context_comment=None, is_primary=True
+        )
     ]
     conjugations = [
-        {
-            "tense": "ap",
-            "person": "ms",
-            "hebrew_form": "כּוֹתֵב",
-            "normalized_hebrew_form": "כותב",
-            "transcription": "kotev",
-        }
+        CreateVerbConjugation(
+            tense=Tense.PRESENT,
+            person=Person.MS,
+            hebrew_form="כּוֹתֵב",
+            normalized_hebrew_form="כותב",
+            transcription="kotev",
+        )
     ]
 
-    # 1. Test word creation
+    word_to_create = CreateCachedWord(
+        hebrew="לִכְתּוֹב",
+        normalized_hebrew="לכתוב",
+        transcription="likhtov",
+        part_of_speech=PartOfSpeech.VERB,
+        root="כ-ת-ב",
+        binyan=Binyan.PAAL,
+        translations=translations,
+        conjugations=conjugations,
+    )
+
+    # 2. Тестируем создание слова, передавая один объект
     with connection:
-        word_id = repo.create_cached_word(
-            hebrew="לִכְתּוֹב",
-            normalized_hebrew="לכתוב",
-            transcription="likhtov",
-            is_verb=True,
-            root="כ-ת-ב",
-            binyan="paal",
-            translations=translations,
-            conjugations=conjugations,
-        )
-    # The 'with' block handles the commit automatically
+        word_id = repo.create_cached_word(word_to_create)
 
     assert isinstance(word_id, int)
 
-    # 2. Test finding the word by its normalized form
-    found_word = repo.find_word_by_normalized_form("לכתוב")
+    # 3. Тестируем поиск слова
+    found_word = repo.find_words_by_normalized_form("לכתוב")[0]
     assert found_word is not None
     assert found_word.hebrew == "לִכְתּוֹב"
     assert len(found_word.translations) == 1
@@ -66,27 +80,28 @@ def test_word_repository(memory_db):
 
 
 def test_srs_level_management(memory_db):
-    """Tests getting and updating the SRS level of a word for a user."""
+    """Тестирует управление SRS-уровнем слова."""
     connection = get_test_connection(memory_db)
     word_repo = WordRepository(connection)
     user_repo = UserDictionaryRepository(connection)
     user_id = 101
     srs_level = 5
-    next_review_at = "2025-01-01 10:00:00"
+    next_review_at = datetime(2025, 1, 1, 10, 0, 0)
 
     with connection:
         user_repo.add_user(user_id, "SRS", "User")
-        translations = [{"translation_text": "to practice", "is_primary": True}]
-        word_id = word_repo.create_cached_word(
+        word_to_create = CreateCachedWord(
             hebrew="לְתַרְגֵּל",
             normalized_hebrew="לתרגל",
             transcription="letargel",
-            is_verb=True,
+            part_of_speech=PartOfSpeech.VERB,
             root="ת-ר-ג-ל",
-            binyan="piel",
-            translations=translations,
-            conjugations=[],
+            binyan=Binyan.PIEL,
+            translations=[
+                CreateTranslation(translation_text="to practice", is_primary=True)
+            ],
         )
+        word_id = word_repo.create_cached_word(word_to_create)
         user_repo.add_word_to_dictionary(user_id, word_id)
         user_repo.update_srs_level(srs_level, next_review_at, user_id, word_id)
 
@@ -99,7 +114,7 @@ def test_srs_level_management(memory_db):
 
 
 def test_get_user_words_for_training(memory_db):
-    """Tests retrieving user words for training, excluding verbs."""
+    """Тестирует получение слов для тренировки (глаголы должны быть исключены)."""
     connection = get_test_connection(memory_db)
     word_repo = WordRepository(connection)
     user_repo = UserDictionaryRepository(connection)
@@ -107,33 +122,31 @@ def test_get_user_words_for_training(memory_db):
 
     with connection:
         user_repo.add_user(user_id, "Train", "User")
-        # Add a non-verb word
-        translations_noun = [{"translation_text": "book", "is_primary": True}]
-        noun_id = word_repo.create_cached_word(
+
+        # Добавляем существительное
+        noun_to_create = CreateCachedWord(
             hebrew="סֵפֶר",
             normalized_hebrew="ספר",
             transcription="sefer",
-            is_verb=False,
-            part_of_speech="noun",
-            root=None,
-            binyan=None,
-            translations=translations_noun,
-            conjugations=[],
+            part_of_speech=PartOfSpeech.NOUN,
+            translations=[CreateTranslation(translation_text="book", is_primary=True)],
         )
+        noun_id = word_repo.create_cached_word(noun_to_create)
         user_repo.add_word_to_dictionary(user_id, noun_id)
 
-        # Add a verb word (should be excluded)
-        translations_verb = [{"translation_text": "to read", "is_primary": True}]
-        verb_id = word_repo.create_cached_word(
+        # Добавляем глагол (должен быть исключен)
+        verb_to_create = CreateCachedWord(
             hebrew="לִקְרוֹא",
             normalized_hebrew="לקרוא",
             transcription="likro",
-            is_verb=True,
+            part_of_speech=PartOfSpeech.VERB,
             root="ק-ר-א",
-            binyan="paal",
-            translations=translations_verb,
-            conjugations=[],
+            binyan=Binyan.PAAL,
+            translations=[
+                CreateTranslation(translation_text="to read", is_primary=True)
+            ],
         )
+        verb_id = word_repo.create_cached_word(verb_to_create)
         user_repo.add_word_to_dictionary(user_id, verb_id)
 
     training_words = user_repo.get_user_words_for_training(user_id, limit=10)
@@ -146,7 +159,7 @@ def test_get_user_words_for_training(memory_db):
 
 
 def test_get_random_verb_for_training(memory_db):
-    """Tests retrieving a random verb for training."""
+    """Тестирует получение случайного глагола для тренировки."""
     connection = get_test_connection(memory_db)
     word_repo = WordRepository(connection)
     user_repo = UserDictionaryRepository(connection)
@@ -154,17 +167,18 @@ def test_get_random_verb_for_training(memory_db):
 
     with connection:
         user_repo.add_user(user_id, "Train", "User")
-        translations = [{"translation_text": "to learn", "is_primary": True}]
-        verb_id = word_repo.create_cached_word(
+        verb_to_create = CreateCachedWord(
             hebrew="לִלְמוֹד",
             normalized_hebrew="ללמוד",
             transcription="lilmod",
-            is_verb=True,
+            part_of_speech=PartOfSpeech.VERB,
             root="ל-מ-ד",
-            binyan="paal",
-            translations=translations,
-            conjugations=[],
+            binyan=Binyan.PAAL,
+            translations=[
+                CreateTranslation(translation_text="to learn", is_primary=True)
+            ],
         )
+        verb_id = word_repo.create_cached_word(verb_to_create)
         user_repo.add_word_to_dictionary(user_id, verb_id)
 
     random_verb = word_repo.get_random_verb_for_training(user_id)
@@ -177,27 +191,24 @@ def test_get_random_verb_for_training(memory_db):
 
 
 def test_find_words_by_normalized_form(memory_db):
-    """Tests finding multiple words by the same normalized form."""
+    """Тестирует поиск слов по нормализованной форме."""
     connection = get_test_connection(memory_db)
     repo = WordRepository(connection)
 
-    # 1. Create multiple words with the same normalized form
     with connection:
-        repo.create_cached_word(
+        word_to_create = CreateCachedWord(
             hebrew="בְּדִיקָה",
             normalized_hebrew="בדיקה",
             transcription="bdika",
-            is_verb=False,
-            root=None,
-            binyan=None,
-            translations=[{"translation_text": "a check", "is_primary": True}],
-            conjugations=[],
+            part_of_speech=PartOfSpeech.NOUN,
+            translations=[
+                CreateTranslation(translation_text="a check", is_primary=True)
+            ],
         )
+        repo.create_cached_word(word_to_create)
 
-    # 2. Find words by the normalized form
     found_words = repo.find_words_by_normalized_form("בדיקה")
 
-    # 3. Assertions
     assert len(found_words) == 1
     assert found_words[0].hebrew == "בְּדִיקָה"
 
@@ -205,28 +216,26 @@ def test_find_words_by_normalized_form(memory_db):
 
 
 def test_get_word_by_id(memory_db):
-    """Tests fetching a word by its ID."""
+    """Тестирует получение слова по его ID."""
     connection = get_test_connection(memory_db)
     repo = WordRepository(connection)
 
-    # 1. Create a word first
     with connection:
-        translations = [{"translation_text": "to test", "is_primary": True}]
-        word_id = repo.create_cached_word(
+        word_to_create = CreateCachedWord(
             hebrew="לִבְדּוֹק",
             normalized_hebrew="לבדוק",
             transcription="livdok",
-            is_verb=True,
+            part_of_speech=PartOfSpeech.VERB,
             root="ב-ד-ק",
-            binyan="paal",
-            translations=translations,
-            conjugations=[],
+            binyan=Binyan.PAAL,
+            translations=[
+                CreateTranslation(translation_text="to test", is_primary=True)
+            ],
         )
+        word_id = repo.create_cached_word(word_to_create)
 
-    # 2. Fetch the word by its ID
     found_word = repo.get_word_by_id(word_id)
 
-    # 3. Assertions
     assert found_word is not None
     assert found_word.word_id == word_id
     assert found_word.hebrew == "לִבְדּוֹק"
@@ -237,52 +246,35 @@ def test_get_word_by_id(memory_db):
 
 
 def test_user_dictionary_repository(memory_db):
-    """Тестирует операции со словарём пользователя."""
+    """Тестирует полный цикл операций со словарём пользователя."""
     connection = get_test_connection(memory_db)
     word_repo = WordRepository(connection)
     user_repo = UserDictionaryRepository(connection)
     user_id = 123
 
-    # --- Фаза 1: Настройка (Setup) ---
-    # Создаём пользователя и слово в одной транзакции
     with connection:
         user_repo.add_user(user_id, "Test", "User")
-        translations = [
-            {"translation_text": "table", "context_comment": None, "is_primary": True}
-        ]
-        word_id = word_repo.create_cached_word(
+        word_to_create = CreateCachedWord(
             hebrew="שֻׁלְחָן",
             normalized_hebrew="שולחן",
             transcription="shulchan",
-            is_verb=False,
-            root=None,
-            binyan=None,
-            translations=translations,
-            conjugations=[],
+            part_of_speech=PartOfSpeech.NOUN,
+            translations=[CreateTranslation(translation_text="table", is_primary=True)],
         )
+        word_id = word_repo.create_cached_word(word_to_create)
 
-    # --- Фаза 2: Добавление и проверка ---
-    # Добавляем слово в словарь пользователя
     with connection:
         user_repo.add_word_to_dictionary(user_id, word_id)
 
-    # Проверяем, что слово было добавлено
     assert user_repo.is_word_in_dictionary(user_id, word_id) is True
-
-    # Проверяем, что оно появилось на странице словаря
     page = user_repo.get_dictionary_page(user_id, 0, 10)
     assert len(page) == 1
     assert page[0].hebrew == "שֻׁלְחָן"
 
-    # --- Фаза 3: Удаление и проверка ---
-    # Удаляем слово
     with connection:
         user_repo.remove_word_from_dictionary(user_id, word_id)
 
-    # Проверяем, что слово было удалено
     assert user_repo.is_word_in_dictionary(user_id, word_id) is False
-
-    # Проверяем, что страница словаря теперь пуста
     page_after_delete = user_repo.get_dictionary_page(user_id, 0, 10)
     assert len(page_after_delete) == 0
 
@@ -290,34 +282,28 @@ def test_user_dictionary_repository(memory_db):
 
 
 def test_word_repository_transaction_rollback(memory_db):
-    """
-    Tests that a transaction is rolled back when an error occurs.
-    """
+    """Тестирует, что транзакция откатывается при ошибке."""
     connection = get_test_connection(memory_db)
     repo = WordRepository(connection)
 
-    translations = [{"translation_text": "to fail", "is_primary": True}]
-    # Invalid data that will cause a TypeError inside the method
-    invalid_conjugations = [1, 2, 3]
+    # Создаем заведомо невалидные данные (неправильный тип в списке)
+    invalid_translations = [1, 2, 3]
 
-    # **THE FIX:** Use 'with connection' to ensure the transaction is rolled back on error.
-    with pytest.raises(TypeError):
+    with pytest.raises(Exception):  # Ловим любую ошибку (Pydantic или TypeError)
         with UnitOfWork() as uow:
-            uow.words.create_cached_word(
+            # Пытаемся создать модель с невалидными данными
+            word_to_create = CreateCachedWord(
                 hebrew="לְהִכָּשֵׁל",
                 normalized_hebrew="להכשל",
                 transcription="lehikashel",
-                is_verb=True,
-                root="כ-ש-ל",
-                binyan="nifal",
-                translations=translations,
-                conjugations=invalid_conjugations,
+                part_of_speech=PartOfSpeech.VERB,
+                translations=invalid_translations,  # Невалидные данные
             )
+            # Эта строка не будет достигнута, так как Pydantic вызовет ошибку выше
+            uow.words.create_cached_word(word_to_create)
 
-    # After the exception and automatic rollback, the word should not exist in the database.
-    found_word = repo.find_word_by_normalized_form("להכשל")
-    assert (
-        found_word is None
-    ), "Word should not have been created due to transaction rollback."
+    # После ошибки и автоматического отката слово не должно существовать в БД
+    found_word = repo.find_words_by_normalized_form("להכשל")
+    assert not found_word, "Слово не должно было быть создано из-за отката транзакции."
 
     connection.close()

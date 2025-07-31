@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, List
 from datetime import datetime
 import sqlite3
 
 from dal.models import (
     CachedWord,
+    CreateCachedWord,
     Translation,
     VerbConjugation,
     UserSettings,
@@ -139,75 +140,44 @@ class WordRepository(BaseRepository):
         result = cursor.fetchone()
         return result["hebrew"] if result else None
 
-    def create_cached_word(
-        self,
-        hebrew: str,
-        normalized_hebrew: str,
-        transcription: Optional[str],
-        is_verb: bool,
-        root: Optional[str],
-        binyan: Optional[str],
-        translations: List[Dict[str, Any]],
-        conjugations: List[Dict[str, Any]],
-        **kwargs,
-    ) -> int:
+    def create_cached_word(self, word_data: CreateCachedWord) -> int:
         cursor = self.connection.cursor()
 
-        part_of_speech = "verb" if is_verb else kwargs.get("part_of_speech")
+        # 1. Вставка основного слова
+        # Используем .model_dump() с exclude, чтобы убрать вложенные списки
+        word_db_data = word_data.model_dump(exclude={"translations", "conjugations"})
+        word_db_data["fetched_at"] = datetime.now()
 
-        word_data = {
-            "hebrew": hebrew,
-            "normalized_hebrew": normalized_hebrew,
-            "transcription": transcription,
-            "part_of_speech": part_of_speech,
-            "root": root,
-            "binyan": binyan,
-            "fetched_at": datetime.now(),
-            **kwargs,
-        }
-
-        # validation
-        CachedWord(word_id=-1, **word_data)
-
-        # Remove is_verb if it exists in kwargs to avoid column error
-        word_data.pop("is_verb", None)
-
-        columns = ", ".join(word_data.keys())
-        placeholders = ", ".join(["?"] * len(word_data))
+        columns = ", ".join(word_db_data.keys())
+        placeholders = ", ".join(["?"] * len(word_db_data))
         word_query = f"INSERT INTO cached_words ({columns}) VALUES ({placeholders})"
-
-        cursor.execute(word_query, list(word_data.values()))
+        cursor.execute(word_query, list(word_db_data.values()))
         word_id = cursor.lastrowid
         if not word_id:
             raise Exception("Failed to get last row id for new word.")
 
-        if translations:
+        # 2. Вставка переводов
+        if word_data.translations:
             translations_to_insert = [
-                (
-                    word_id,
-                    t["translation_text"],
-                    t.get("context_comment"),
-                    t["is_primary"],
-                )
-                for t in translations
+                (word_id, t.translation_text, t.context_comment, t.is_primary)
+                for t in word_data.translations
             ]
-            [Translation(**t, word_id=word_id, translation_id=-1) for t in translations]
             translations_query = "INSERT INTO translations (word_id, translation_text, context_comment, is_primary) VALUES (?, ?, ?, ?)"
             cursor.executemany(translations_query, translations_to_insert)
 
-        if conjugations:
+        # 3. Вставка спряжений
+        if word_data.conjugations:
             conjugations_to_insert = [
                 (
                     word_id,
-                    c["tense"],
-                    c["person"],
-                    c["hebrew_form"],
-                    c["normalized_hebrew_form"],
-                    c["transcription"],
+                    c.tense.value,
+                    c.person.value,
+                    c.hebrew_form,
+                    c.normalized_hebrew_form,
+                    c.transcription,
                 )
-                for c in conjugations
+                for c in word_data.conjugations
             ]
-            [VerbConjugation(**c, word_id=word_id, id=-1) for c in conjugations]
             conjugations_query = "INSERT INTO verb_conjugations (word_id, tense, person, hebrew_form, normalized_hebrew_form, transcription) VALUES (?, ?, ?, ?, ?, ?)"
             cursor.executemany(conjugations_query, conjugations_to_insert)
 

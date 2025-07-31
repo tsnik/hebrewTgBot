@@ -1,32 +1,36 @@
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
+
 from handlers.search import add_word_to_dictionary
 from handlers.dictionary import execute_delete_word, view_dictionary_page_handler
 from dal.unit_of_work import UnitOfWork
 from config import CB_DICT_VIEW, CB_DICT_EXECUTE_DELETE, DICT_WORDS_PER_PAGE
 
+# Импортируем модели для создания тестовых данных
+from dal.models import CreateCachedWord, CreateTranslation, PartOfSpeech
+
 
 @pytest.mark.asyncio
 async def test_add_word_to_dictionary(memory_db):
-    """Test adding a word to the dictionary."""
+    """Тестирует добавление слова в словарь."""
     update = Mock()
     update.callback_query = AsyncMock()
     update.callback_query.from_user.id = 123
+    # ID слова теперь 1, так как база данных для каждого теста чистая
     update.callback_query.data = "word:add:1"
     context = Mock()
     context.bot = AsyncMock()
 
     with UnitOfWork() as uow:
-        uow.words.create_cached_word(
+        # Используем новую модель для создания слова
+        word_to_create = CreateCachedWord(
             hebrew="מילה",
             normalized_hebrew="מילה",
             transcription="mila",
-            is_verb=False,
-            root=None,
-            binyan=None,
-            translations=[{"translation_text": "word", "is_primary": True}],
-            conjugations=[],
+            part_of_speech=PartOfSpeech.NOUN,
+            translations=[CreateTranslation(translation_text="word", is_primary=True)],
         )
+        uow.words.create_cached_word(word_to_create)
         uow.commit()
 
     with patch("handlers.search.display_word_card"):
@@ -37,34 +41,36 @@ async def test_add_word_to_dictionary(memory_db):
 
 @pytest.mark.asyncio
 async def test_delete_word_from_dictionary(memory_db):
-    """Test deleting a word from the user's dictionary."""
+    """Тестирует удаление слова из словаря пользователя."""
     update = Mock()
     query = AsyncMock()
     update.callback_query = query
     query.from_user.id = 123
 
     with UnitOfWork() as uow:
-        # Add a couple of words to check we only delete the right one
-        word_id_to_delete = uow.words.create_cached_word(
+        # Создаем слова с помощью новых моделей
+        word_to_delete_model = CreateCachedWord(
             hebrew="למחוק",
             normalized_hebrew="למחוק",
             transcription="limkhok",
-            is_verb=False,
-            root=None,
-            binyan=None,
-            translations=[{"translation_text": "to delete", "is_primary": True}],
-            conjugations=[],
+            part_of_speech=PartOfSpeech.VERB,
+            translations=[
+                CreateTranslation(translation_text="to delete", is_primary=True)
+            ],
         )
-        word_id_to_keep = uow.words.create_cached_word(
+        word_id_to_delete = uow.words.create_cached_word(word_to_delete_model)
+
+        word_to_keep_model = CreateCachedWord(
             hebrew="לשמור",
             normalized_hebrew="לשמור",
             transcription="lishmor",
-            is_verb=False,
-            root=None,
-            binyan=None,
-            translations=[{"translation_text": "to keep", "is_primary": True}],
-            conjugations=[],
+            part_of_speech=PartOfSpeech.VERB,
+            translations=[
+                CreateTranslation(translation_text="to keep", is_primary=True)
+            ],
         )
+        word_id_to_keep = uow.words.create_cached_word(word_to_keep_model)
+
         uow.user_dictionary.add_user(123, "Test", "testuser")
         uow.user_dictionary.add_word_to_dictionary(123, word_id_to_delete)
         uow.user_dictionary.add_word_to_dictionary(123, word_id_to_keep)
@@ -76,16 +82,12 @@ async def test_delete_word_from_dictionary(memory_db):
         await execute_delete_word(update, Mock())
 
     query.answer.assert_called_once_with("Слово удалено")
-
-    # Verify that the correct page is re-rendered
     mock_view_logic.assert_called_once()
-    # Check that the call was made with the correct parameters to redraw the view
     args, kwargs = mock_view_logic.call_args
     assert kwargs["page"] == 0
     assert kwargs["deletion_mode"] is False
     assert kwargs["exclude_word_id"] == word_id_to_delete
 
-    # Verify in the database
     with UnitOfWork() as uow:
         assert not uow.user_dictionary.is_word_in_dictionary(123, word_id_to_delete)
         assert uow.user_dictionary.is_word_in_dictionary(123, word_id_to_keep)
@@ -105,16 +107,16 @@ async def test_view_dictionary_pagination(memory_db):
     with UnitOfWork() as uow:
         uow.user_dictionary.add_user(123, "Test", "testuser")
         for i in range(DICT_WORDS_PER_PAGE + 1):
-            word_id = uow.words.create_cached_word(
+            word_model = CreateCachedWord(
                 hebrew=f"מילה{i}",
                 normalized_hebrew=f"מילה{i}",
                 transcription=f"mila{i}",
-                is_verb=False,
-                root=None,
-                binyan=None,
-                translations=[{"translation_text": f"word{i}", "is_primary": True}],
-                conjugations=[],
+                part_of_speech=PartOfSpeech.NOUN,
+                translations=[
+                    CreateTranslation(translation_text=f"word{i}", is_primary=True)
+                ],
             )
+            word_id = uow.words.create_cached_word(word_model)
             uow.user_dictionary.add_word_to_dictionary(123, word_id)
         uow.commit()
 

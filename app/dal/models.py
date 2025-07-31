@@ -92,6 +92,42 @@ class CachedWord(BaseModel):
     feminine_plural: Optional[str] = None
 
 
+class CreateTranslation(BaseModel):
+    """Модель для данных о новом переводе."""
+
+    translation_text: str
+    context_comment: Optional[str] = None
+    is_primary: bool
+
+
+class CreateVerbConjugation(BaseModel):
+    """Модель для данных о новом спряжении."""
+
+    tense: Tense
+    person: Person
+    hebrew_form: str
+    normalized_hebrew_form: str
+    transcription: str
+
+
+class CreateCachedWord(BaseModel):
+    hebrew: str
+    normalized_hebrew: str
+    transcription: Optional[str]
+    part_of_speech: PartOfSpeech
+    root: Optional[str] = None
+    binyan: Optional[Binyan] = None
+    translations: List[CreateTranslation]
+    conjugations: List[CreateVerbConjugation] = []
+    gender: Optional[Gender] = None
+    singular_form: Optional[str] = None
+    plural_form: Optional[str] = None
+    masculine_singular: Optional[str] = None
+    feminine_singular: Optional[str] = None
+    masculine_plural: Optional[str] = None
+    feminine_plural: Optional[str] = None
+
+
 class UserDictionaryEntry(BaseModel):
     id: int
     user_id: int
