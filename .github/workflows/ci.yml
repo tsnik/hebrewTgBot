@@ -38,23 +38,12 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
+      
+    - name: Set up Docker Compose
+      uses: docker/setup-compose-action@v1
 
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.12
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install -r requirements-test.txt
-
-    - name: Run tests and collect coverage
-      run: |
-        export PYTHONPATH=app
-        # Запускаем юнит-тесты, создавая initial .coverage file
-        python -m pytest --cov=app --cov-report=xml tests/unit
+    - name: Run test docker container and collect coverage
+      run: ./test.sh tests/unit
 
     - name: Upload combined coverage to Codecov
       uses: codecov/codecov-action@v5
@@ -69,22 +58,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.12
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install -r requirements-test.txt
-
-    - name: Run tests and collect coverage
-      run: |
-        export PYTHONPATH=app
-        # Запускаем юнит-тесты, создавая initial .coverage file
-        python -m pytest --cov=app --cov-report=xml tests/integration
+    - name: Run test docker container and collect coverage
+      run: ./test.sh tests/integration
 
     - name: Upload combined coverage to Codecov
       uses: codecov/codecov-action@v5

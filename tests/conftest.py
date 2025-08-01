@@ -49,6 +49,8 @@ def memory_db(monkeypatch):
     # 3. Теперь yoyo будет использовать наш метод для подключения
     backend = get_backend(db_uri_for_yoyo)
     migrations = read_migrations("app/migrations")
+    if len(migrations) == 0:
+        migrations = read_migrations("migrations")
 
     # `backend.connection` теперь будет вызывать наш `patched_sqlite_connect`
     with backend.lock(), backend.connection:

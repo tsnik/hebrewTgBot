@@ -1,0 +1,51 @@
+services:
+  bot:
+    build: .
+    container_name: hebrew-bot-app
+    restart: always
+    env_file:
+      - .env
+    environment:
+      # Собираем строку подключения из тех же переменных
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:${POSTGRES_DB_PORT}/${POSTGRES_DB}
+    profiles: ["app"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  exporter:
+    build:
+      context: .
+      dockerfile: dockerfile.exporter
+    container_name: hebrew-bot-exporter
+    restart: always
+    env_file:
+      - .env
+    environment:
+      # Собираем строку подключения из тех же переменных
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:${POSTGRES_DB_PORT}/${POSTGRES_DB}
+    ports:
+      - "9199:9199"
+    profiles: ["app"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  tests:
+    build: 
+      context: .
+      target: tests
+    container_name: hebrew-bot-tests
+    restart: "no"
+    environment:
+      - DATABASE_URL=postgresql://testuser:testpassword@db_test:5432/testdb
+      - PYTHONPATH=app
+      - TEST_TO_RUN=tests
+    volumes:
+      # Для отчетов покрытия тестами
+      - .:/data
+    command: sh -c "python -m pytest --cov=app --rootdir=tests --cov-report=xml:/data/coverage.xml $$TEST_TO_RUN"
+    profiles: ["tests"]
+    depends_on:
+      db_test:
+        condition: service_healthy

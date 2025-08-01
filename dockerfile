@@ -19,6 +19,19 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# --- Образ для тестов ---
+FROM builder AS tests
+
+WORKDIR /
+
+COPY requirements-test.txt ./
+RUN pip install --no-cache-dir -r requirements-test.txt
+
+COPY app/ app
+
+# Если ваши тесты находятся в отдельной папке, например, "tests"
+COPY tests/ tests
+
 # --- Финальный образ ---
 # Создаем новый "чистый" образ на той же основе
 FROM python:3.10-slim-bookworm
