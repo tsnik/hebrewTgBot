@@ -24,6 +24,9 @@ FROM builder AS tests
 
 WORKDIR /
 
+# Установка клиентских библиотек PostgreSQL (для psycopg2)
+RUN apt-get update && apt-get install -y postgresql-client && rm -rf /var/lib/apt/lists/*
+
 COPY requirements-test.txt ./
 RUN pip install --no-cache-dir -r requirements-test.txt
 
@@ -42,8 +45,8 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Установка curl для HEALTHCHECK
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Установка клиентских библиотек PostgreSQL (для psycopg2) и curl (для HEALTHCHECK)
+RUN apt-get update && apt-get install -y postgresql-client curl && rm -rf /var/lib/apt/lists/*
 
 # Создаем директорию для хранения данных
 RUN mkdir data

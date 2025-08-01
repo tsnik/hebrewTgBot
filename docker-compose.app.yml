@@ -1,3 +1,4 @@
+name: hebrewtgbot
 services:
   bot:
     build: .

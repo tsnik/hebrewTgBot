@@ -22,7 +22,7 @@ log_json "INFO" "Applying database migrations"
 # Запускаем миграции. Если будет ошибка, `set -e` остановит скрипт.
 # Вывод ошибки от yoyo будет захвачен Docker-ом как обычный текстовый лог,
 # что поможет быстро идентифицировать проблему.
-yoyo apply --no-config-file --database "sqlite:///data/hebrew_helper_cache.db" -v migrations
+yoyo apply --no-config-file --database "$DATABASE_URL" -v migrations_postgres
 
 log_json "INFO" "Migrations applied successfully"
 

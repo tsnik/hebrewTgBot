@@ -4,6 +4,6 @@
 # выбирает профиль "app" и запускает все в фоновом режиме.
 docker compose \
   -f docker-compose.base.yml \
-  -f docker-compose.yml \
+  -f docker-compose.app.yml \
   --profile app \
   up -d --build
