@@ -8,7 +8,7 @@ TEST_TO_RUN_LINE=""
 
 if [ -n "$1" ]
 then
-TEST_TO_RUN_LINE="-e TEST_TO_RUN=tests/unit"
+TEST_TO_RUN_LINE="-e TEST_TO_RUN=$1"
 fi
 
 echo "$TEST_TO_RUN_LINE"

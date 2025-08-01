@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 import abc
-import sqlite3
 from types import TracebackType
 from typing import Optional, Type
 
-from config import DB_NAME, logger
+from config import logger
 from dal.repositories import (
     WordRepository,
     UserDictionaryRepository,
     UserSettingsRepository,
 )
-from services.connection import write_db_manager
+from services.connection import Connection, db_manager
 
 
 class AbstractUnitOfWork(abc.ABC):
@@ -40,15 +39,18 @@ class AbstractUnitOfWork(abc.ABC):
 
 
 class UnitOfWork(AbstractUnitOfWork):
-    def __init__(self, db_name: str = DB_NAME):
-        self.connection_manager = write_db_manager
-        self.connection: Optional[sqlite3.Connection] = None
+    def __init__(self):
+        self.connection_manager = db_manager
+        self.connection: Optional[Connection] = None
+        self.is_postgres = self.connection_manager.is_postgres
 
     def __enter__(self) -> AbstractUnitOfWork:
         self.connection = self.connection_manager.__enter__()
-        self.words = WordRepository(self.connection)
-        self.user_dictionary = UserDictionaryRepository(self.connection)
-        self.user_settings = UserSettingsRepository(self.connection)
+        self.words = WordRepository(self.connection, self.is_postgres)
+        self.user_dictionary = UserDictionaryRepository(
+            self.connection, self.is_postgres
+        )
+        self.user_settings = UserSettingsRepository(self.connection, self.is_postgres)
         return super().__enter__()
 
     def __exit__(

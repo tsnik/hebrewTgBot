@@ -4,12 +4,12 @@ from handlers.common import start
 
 
 @pytest.mark.asyncio
-async def test_start_command(memory_db):
+async def test_start_command(patch_db_url, unique_user_id):
     """Test the /start command."""
     update = Mock()
     update.message = AsyncMock()
     type(update).effective_user = PropertyMock(
-        return_value=Mock(id=123, first_name="Test", username="testuser")
+        return_value=Mock(id=unique_user_id, first_name="Test", username="testuser")
     )
     context = Mock()
     context.bot = AsyncMock()

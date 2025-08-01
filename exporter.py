@@ -1,24 +1,29 @@
-import sqlite3
+import os
 import time
+import psycopg2
 from prometheus_client import start_http_server, Gauge
 
 # --- Метрики, которые мы будем собирать ---
-# Gauge - это метрика, значение которой может как увеличиваться, так и уменьшаться.
 DB_USERS_TOTAL = Gauge("db_users_total", "Total number of users in the database")
 DB_WORDS_TOTAL = Gauge("db_words_total", "Total number of cached words in the database")
 DB_USER_DICTIONARY_ENTRIES_TOTAL = Gauge(
     "db_user_dictionary_entries_total", "Total number of words in all user dictionaries"
 )
 
-DATABASE_PATH = "/app/data/hebrew_helper_cache.db"
+# Получаем строку подключения из переменной окружения
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def query_database():
-    """Подключается к БД и выполняет запросы."""
+    """Подключается к БД PostgreSQL и выполняет запросы."""
+    if not DATABASE_URL:
+        print("Error: DATABASE_URL environment variable is not set.")
+        return
+
+    conn = None
     try:
-        # Используем read-only режим для безопасности
-        con = sqlite3.connect(f"file:{DATABASE_PATH}?mode=ro", uri=True)
-        cur = con.cursor()
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
 
         # Запрос 1: Количество пользователей
         cur.execute("SELECT COUNT(*) FROM users")
@@ -35,13 +40,17 @@ def query_database():
         dict_entries_count = cur.fetchone()[0]
         DB_USER_DICTIONARY_ENTRIES_TOTAL.set(dict_entries_count)
 
-        con.close()
         print(
             f"Metrics updated: users={users_count}, words={words_count}, dict_entries={dict_entries_count}"
         )
 
+    except psycopg2.OperationalError as e:
+        print(f"Error connecting to PostgreSQL database: {e}")
     except Exception as e:
-        print(f"Error querying database: {e}")
+        print(f"An error occurred while querying the database: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 
 if __name__ == "__main__":

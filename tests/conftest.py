@@ -1,85 +1,145 @@
+import os
 import pytest
-import sqlite3
-import uuid
 from yoyo import get_backend, read_migrations
-from yoyo.backends import SQLiteBackend
-import dal.unit_of_work
-import services.connection
+import psycopg2
+from psycopg2.extras import DictCursor
+import uuid
+
 import config
+import dal.unit_of_work
+from dal.unit_of_work import UnitOfWork
+from dal.repositories import UserSettingsRepository
+import services.connection
 from services.connection import DatabaseConnectionManager
+
+# Получаем URL тестовой базы данных из переменной окружения
+TEST_DATABASE_URL = os.getenv("DATABASE_URL")
+if not TEST_DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable not set for tests")
+
+
+@pytest.fixture(scope="session")
+def db_schema():
+    """
+    Session-scoped fixture to set up and tear down the database schema.
+    This ensures migrations are run only once per test session.
+    """
+    backend = get_backend(TEST_DATABASE_URL)
+    migrations = read_migrations("app/migrations_postgres")
+
+    with backend.lock():
+        backend.apply_migrations(backend.to_apply(migrations))
+
+    yield
+
+    with backend.lock():
+        backend.rollback_migrations(backend.to_rollback(migrations))
 
 
 @pytest.fixture(scope="function")
-def memory_db(monkeypatch):
+def db_separate_schema():
     """
-    Fixture to set up a shared in-memory SQLite database for the test session.
-
-    This fixture patches yoyo-migrations's SQLite connection method to correctly
-    handle shared in-memory databases via URI, making it the most robust solution.
+    Фикстура для создания, установки и удаления схемы для каждого теста.
     """
-    # Этот URI будет использоваться и в нашем патче, и в приложении
-    db_uri_for_app = f"file:mem_{uuid.uuid4()}?mode=memory&cache=shared"
+    # 1. Генерация уникального имени для схемы
+    schema_name = f"test_schema_{uuid.uuid4().hex}"
 
-    # Этот URI мы передаем в yoyo, чтобы он выбрал правильный бэкенд
-    db_uri_for_yoyo = f"sqlite:///{db_uri_for_app}"
+    # Настройки подключения
+    conn = psycopg2.connect(TEST_DATABASE_URL, cursor_factory=DictCursor)
+    conn.autocommit = False
+    cursor = conn.cursor()
 
-    master_connection = sqlite3.connect(
-        db_uri_for_app, uri=True, check_same_thread=False
+    try:
+        # 2. Создание схемы
+        cursor.execute(f"CREATE SCHEMA {schema_name};")
+        conn.commit()
+
+        # 3. Установка search_path для текущей сессии
+        cursor.execute(f"SET search_path TO {schema_name};")
+        conn.commit()
+
+        backend = get_backend(f"{TEST_DATABASE_URL}?schema={schema_name}")
+        migrations = read_migrations("app/migrations_postgres")
+
+        with backend.lock():
+            backend.apply_migrations(backend.to_apply(migrations))
+        conn.commit()
+
+        # 4. Возвращаем соединение для использования в тесте
+        yield conn, schema_name
+
+    finally:
+        # 5. Удаление схемы после завершения теста
+        cursor.execute(f"DROP SCHEMA {schema_name} CASCADE;")
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+
+@pytest.fixture(scope="function")
+def db_session(db_schema):
+    """
+    Function-scoped fixture to provide a transactional session for each test.
+    """
+    conn = psycopg2.connect(TEST_DATABASE_URL, cursor_factory=DictCursor)
+    conn.autocommit = False
+
+    try:
+        conn.cursor().execute("BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;")
+        yield conn
+    finally:
+        # Clean up by rolling back any changes made during the test
+        conn.rollback()
+        conn.close()
+
+
+@pytest.fixture(scope="function")
+def patch_db_url(monkeypatch, db_separate_schema):
+    """
+    Autouse fixture to patch the DATABASE_URL in the config and recreate
+    the global db_manager for each test function, ensuring isolation.
+    """
+    # 1. Патчим URL в конфиге
+    monkeypatch.setattr(config, "DATABASE_URL", TEST_DATABASE_URL)
+
+    _, db_schema = db_separate_schema
+
+    # 2. Создаем НОВЫЙ менеджер соединений для этого теста
+    # Это ключевой момент для изоляции тестов. Каждый тест получает свой
+    # собственный менеджер, который будет использовать пропатченный URL.
+    new_manager = DatabaseConnectionManager(
+        db_url=TEST_DATABASE_URL, db_schema=db_schema
     )
 
-    # 1. Определяем нашу собственную функцию для подключения
-    def patched_sqlite_connect(self, dburi_obj):
-        """
-        A patched version of yoyo.backends.SQLiteBackend.connect.
-        This ignores the parsed dburi_obj and connects directly using our
-        full URI string, which is necessary for shared in-memory databases.
-        """
-        print(f"--- Patched yoyo connect called. Connecting to {db_uri_for_app} ---")
-        conn = sqlite3.connect(
-            db_uri_for_app,
-            uri=True,
-            detect_types=sqlite3.PARSE_DECLTYPES,
-        )
-        conn.isolation_level = None  # yoyo expects this
-        return conn
-
-    # 2. Патчим метод 'connect' в классе SQLiteBackend с помощью сессионного monkeypatch
-    monkeypatch.setattr(SQLiteBackend, "connect", patched_sqlite_connect)
-
-    # 3. Теперь yoyo будет использовать наш метод для подключения
-    backend = get_backend(db_uri_for_yoyo)
-    migrations = read_migrations("app/migrations")
-    if len(migrations) == 0:
-        migrations = read_migrations("migrations")
-
-    # `backend.connection` теперь будет вызывать наш `patched_sqlite_connect`
-    with backend.lock(), backend.connection:
-        print("--- Applying migrations using patched yoyo backend ---")
-        backend.apply_migrations(backend.to_apply(migrations))
-        print("--- Migrations applied successfully ---")
-
-        # 4. Передаем URI в тесты, НАХОДЯСЬ ВНУТРИ блока with.
-        # Это гарантирует, что соединение, поддерживающее жизнь БД,
-        # останется открытым на всю тестовую сессию.
-        yield db_uri_for_app
-
-    master_connection.close()
-
-    # Блок with завершится здесь, и соединение закроется ПОСЛЕ
-    # того, как все тесты в сессии будут выполнены.
+    # 3. Патчим глобальный db_manager в модулях, где он используется
+    monkeypatch.setattr(services.connection, "db_manager", new_manager)
+    monkeypatch.setattr(dal.unit_of_work, "db_manager", new_manager)
 
 
-@pytest.fixture(autouse=True)
-def patch_db_name(monkeypatch, memory_db):
+@pytest.fixture(scope="function")
+def unique_user_id() -> int:
     """
-    Autouse fixture to patch the DB_NAME in the config for all tests.
+    Фикстура для генерации уникального user_id для каждого теста.
+    Мы используем часть UUID, преобразованную в число, чтобы избежать конфликтов.
     """
-    monkeypatch.setattr(dal.unit_of_work, "DB_NAME", memory_db)
-    monkeypatch.setattr(services.connection, "DB_NAME", memory_db)
-    monkeypatch.setattr(config, "DB_NAME", memory_db)
+    # SQLite не поддерживает UUID, поэтому используем int.
+    # Для PostgreSQL можно было бы использовать UUID.
+    return uuid.uuid4().int % (10**9)
 
-    # Шаг 2: КЛЮЧЕВОЕ ИЗМЕНЕНИЕ. Заменяем старые синглтоны новыми.
-    # Теперь любой код, импортирующий write_db_manager, получит наш
-    # новый, чистый экземпляр, подключенный к изолированной БД этого теста.
-    new_manager = DatabaseConnectionManager(db_name=memory_db, read_only=False)
-    monkeypatch.setattr(dal.unit_of_work, "write_db_manager", new_manager)
+
+@pytest.fixture(scope="function")
+def user_settings_repo(db_session, unique_user_id):
+    """Фикстура для создания репозитория и тестового пользователя."""
+    connection = db_session
+    # Добавляем пользователя, чтобы не нарушать FOREIGN KEY constraint
+    connection.cursor().execute(
+        "INSERT INTO users (user_id) VALUES (%s);", (unique_user_id,)
+    )
+    yield UserSettingsRepository(connection)
+
+
+@pytest.fixture(scope="function")
+def unique_user(unique_user_id):
+    with UnitOfWork() as uow:
+        uow.user_dictionary.add_user(unique_user_id, "TEST", None)
+    yield unique_user_id

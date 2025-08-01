@@ -56,17 +56,14 @@ COPY app/ .
 COPY entrypoint.sh .
 RUN chmod +x ./entrypoint.sh
 
-# 6. Объявляем том для хранения персистентных данных (базы данных)
-#    Это позволяет Docker управлять данными отдельно от контейнера.
-VOLUME ["/app/data"]
 
 # Добавление проверки состояния
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/ || exit 1
 
-# 7. Указываем наш скрипт как точку входа
+# Указываем наш скрипт как точку входа
 ENTRYPOINT ["./entrypoint.sh"]
 
-# 8. CMD теперь содержит ТОЛЬКО команду для запуска бота.
+# CMD теперь содержит ТОЛЬКО команду для запуска бота.
 #    Эта команда будет передана в entrypoint.sh (в переменную "$@").
 CMD ["python", "main.py"]

@@ -9,7 +9,6 @@ from handlers.search import handle_text_message, add_word_to_dictionary
 from config import CB_ADD
 from dal.unit_of_work import UnitOfWork
 
-TEST_USER_ID = 123456789
 TEST_CHAT_ID = 987654321
 
 
@@ -70,7 +69,11 @@ async def test_full_search_and_add_scenario(
     search_word,
     word_hebrew,
     word_hebrew_normalized,
+    patch_db_url,
+    unique_user: int,
 ):
+    TEST_USER_ID = unique_user
+
     async def side_effect_get(url, **kwargs):
         request = httpx.Request("GET", url)
         if "/search/" in str(url):

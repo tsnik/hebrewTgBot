@@ -1,38 +1,16 @@
-import pytest
-import sqlite3
-
 from dal.repositories import UserSettingsRepository
 from dal.models import UserSettings, Tense
 
 
-# Вспомогательная функция для подключения к тестовой БД
-def get_test_connection(memory_db_uri: str) -> sqlite3.Connection:
-    connection = sqlite3.connect(
-        memory_db_uri, uri=True, detect_types=sqlite3.PARSE_DECLTYPES
-    )
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON;")
-    return connection
-
-
-@pytest.fixture
-def user_settings_repo(memory_db):
-    """Фикстура для создания репозитория и тестового пользователя."""
-    connection = get_test_connection(memory_db)
-    # Добавляем пользователя, чтобы не нарушать FOREIGN KEY constraint
-    connection.execute("INSERT INTO users (user_id) VALUES (123);")
-    connection.commit()
-    yield UserSettingsRepository(connection)
-    connection.close()
-
-
-def test_initialize_and_get_user_settings(user_settings_repo: UserSettingsRepository):
+def test_initialize_and_get_user_settings(
+    user_settings_repo: UserSettingsRepository, unique_user_id: int
+):
     """
     Тест:
     1. Настройки по умолчанию корректно создаются для нового пользователя.
     2. Настройки корректно извлекаются в виде Pydantic модели UserSettings.
     """
-    user_id = 123
+    user_id = unique_user_id
 
     # 1. Вызываем инициализацию
     with user_settings_repo.connection:
@@ -57,9 +35,11 @@ def test_initialize_and_get_user_settings(user_settings_repo: UserSettingsReposi
     assert settings_dict["imp"] is True
 
 
-def test_toggle_tense_setting(user_settings_repo: UserSettingsRepository):
+def test_toggle_tense_setting(
+    user_settings_repo: UserSettingsRepository, unique_user_id: int
+):
     """Тест: переключение статуса времени работает корректно с использованием Enum."""
-    user_id = 123
+    user_id = unique_user_id
     with user_settings_repo.connection:
         user_settings_repo.initialize_tense_settings(user_id)
 

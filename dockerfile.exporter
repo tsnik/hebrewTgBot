@@ -2,7 +2,7 @@
 FROM python:3.10-slim
 
 # Устанавливаем зависимость
-RUN pip install prometheus-client
+RUN pip install prometheus-client psycopg2-binary
 
 # Копируем наш скрипт внутрь образа
 COPY exporter.py /
