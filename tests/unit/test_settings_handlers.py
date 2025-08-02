@@ -1,29 +1,86 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from handlers.settings import settings_menu, manage_tenses_menu, toggle_tense
+from handlers.settings import (
+    settings_menu,
+    manage_tenses_menu,
+    toggle_tense,
+    toggle_training_mode_handler,
+)
 from dal.models import UserSettings, UserTenseSetting, Tense
-from config import CB_TENSES_MENU, CB_TENSE_TOGGLE
+from config import (
+    CB_TENSE_TOGGLE,
+    CB_TOGGLE_TRAINING_MODE,
+)
 
 
 @pytest.mark.asyncio
-async def test_settings_menu():
-    """Тест: главное меню настроек отображается корректно."""
+async def test_settings_menu(monkeypatch):
+    """Тест: главное меню настроек корректно отображает все элементы,
+    включая динамический статус режима тренировки."""
     update = AsyncMock()
+    update.callback_query.from_user.id = 123
     context = MagicMock()
 
-    await settings_menu(update, context)
+    # Моделируем два состояния настроек для проверки
+    mock_settings_off = UserSettings(user_id=123, use_grammatical_forms=False)
+    mock_settings_on = UserSettings(user_id=123, use_grammatical_forms=True)
 
-    update.callback_query.answer.assert_called_once()
-    update.callback_query.edit_message_text.assert_called_once()
+    descriptive_text = "В продвинутом режиме тренировки"  # Текст для проверки
 
-    call_kwargs = update.callback_query.edit_message_text.call_args.kwargs
-    assert "Настройки" in call_kwargs["text"]
+    with patch("handlers.settings.UnitOfWork") as mock_uow_class:
+        mock_uow = mock_uow_class.return_value.__enter__.return_value
 
-    keyboard = call_kwargs["reply_markup"].inline_keyboard
-    assert len(keyboard) == 2
-    assert "Мои времена глаголов" in keyboard[0][0].text
-    assert keyboard[0][0].callback_data == CB_TENSES_MENU
+        # --- Сценарий 1: Режим тренировки форм ВЫКЛЮЧЕН ---
+        mock_uow.user_settings.get_user_settings.return_value = mock_settings_off
+        await settings_menu(update, context)
+
+        update.callback_query.edit_message_text.assert_called_once()
+        call_kwargs_off = update.callback_query.edit_message_text.call_args.kwargs
+        keyboard_off = call_kwargs_off["reply_markup"].inline_keyboard
+
+        assert "Настройки" in call_kwargs_off["text"]
+        assert descriptive_text in call_kwargs_off["text"]
+        assert len(keyboard_off) == 3  # Проверяем, что кнопок теперь три
+        assert "🕰️ Мои времена глаголов" in keyboard_off[0][0].text
+        assert "🔄 Продвинутый режим: ⬜️ Выкл" in keyboard_off[1][0].text
+        assert "⬅️ В главное меню" in keyboard_off[2][0].text
+
+        update.callback_query.edit_message_text.reset_mock()  # Сбрасываем мок для следующей проверки
+
+        # --- Сценарий 2: Режим тренировки форм ВКЛЮЧЕН ---
+        mock_uow.user_settings.get_user_settings.return_value = mock_settings_on
+        await settings_menu(update, context)
+
+        update.callback_query.edit_message_text.assert_called_once()
+        call_kwargs_on = update.callback_query.edit_message_text.call_args.kwargs
+        keyboard_on = call_kwargs_on["reply_markup"].inline_keyboard
+        assert "🔄 Продвинутый режим: ✅ Вкл" in keyboard_on[1][0].text
+
+
+@pytest.mark.asyncio
+async def test_toggle_training_mode_handler():
+    """Тест: нажатие на кнопку переключения режима вызывает обновление в БД и перерисовку меню."""
+    update = AsyncMock()
+    update.callback_query.from_user.id = 123
+    update.callback_query.data = CB_TOGGLE_TRAINING_MODE
+    context = MagicMock()
+
+    with patch("handlers.settings.UnitOfWork") as mock_uow_class:
+        mock_uow = mock_uow_class.return_value.__enter__.return_value
+
+        # Мокаем `settings_menu` для проверки, что она была вызвана для обновления
+        with patch(
+            "handlers.settings.settings_menu", new_callable=AsyncMock
+        ) as mock_settings_menu:
+            await toggle_training_mode_handler(update, context)
+
+            # Проверяем, что была вызвана логика переключения в БД
+            mock_uow.user_settings.toggle_training_mode.assert_called_once_with(123)
+            mock_uow.commit.assert_called_once()
+
+            # Проверяем, что меню было перерисовано
+            mock_settings_menu.assert_called_once()
 
 
 @pytest.mark.asyncio

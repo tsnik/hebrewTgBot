@@ -40,6 +40,7 @@ from config import (
     CB_SETTINGS_MENU,
     CB_TENSES_MENU,
     CB_TENSE_TOGGLE,
+    CB_TOGGLE_TRAINING_MODE,
     CB_SHOW_ALL_VERB_FORMS,
 )
 
@@ -75,6 +76,7 @@ from handlers.settings import (
     settings_menu,
     toggle_tense,
     manage_tenses_menu,
+    toggle_training_mode_handler,
 )
 
 
@@ -182,6 +184,12 @@ def build_application() -> Application:
     )
     application.add_handler(
         CallbackQueryHandler(toggle_tense, pattern=f"^{CB_TENSE_TOGGLE}:")
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            toggle_training_mode_handler, pattern=f"^{CB_TOGGLE_TRAINING_MODE}$"
+        )
     )
 
     application.add_handler(training_conv)

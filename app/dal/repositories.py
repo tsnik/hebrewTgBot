@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-
-from typing import Optional, List, Any, Dict
+import random
+from typing import Optional, List, Any, Dict, Tuple
 from datetime import datetime
 
 from psycopg2.extras import DictRow
@@ -13,6 +13,7 @@ from dal.models import (
     UserSettings,
     UserTenseSetting,
     Tense,
+    PartOfSpeech,
 )
 from services.connection import Connection
 
@@ -144,6 +145,44 @@ class WordRepository(BaseRepository):
         result = cursor.fetchone()
         return result["hebrew"] if result else None
 
+    def get_random_grammatical_form(
+        self, word: CachedWord, active_tenses: List[str]
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Выбирает случайную грамматическую форму для слова в зависимости от части речи."""
+        if word.part_of_speech == PartOfSpeech.NOUN:
+            forms = []
+            if word.singular_form:
+                forms.append((word.singular_form, "ед.ч."))
+            if word.plural_form:
+                forms.append((word.plural_form, "мн.ч."))
+            return random.choice(forms) if forms else (None, None)
+
+        if word.part_of_speech == PartOfSpeech.ADJECTIVE:
+            forms = []
+            if word.masculine_singular:
+                forms.append((word.masculine_singular, "м.р., ед.ч."))
+            if word.feminine_singular:
+                forms.append((word.feminine_singular, "ж.р., ед.ч."))
+            if word.masculine_plural:
+                forms.append((word.masculine_plural, "м.р., мн.ч."))
+            if word.feminine_plural:
+                forms.append((word.feminine_plural, "ж.р., мн.ч."))
+            return random.choice(forms) if forms else (None, None)
+
+        if word.part_of_speech == PartOfSpeech.VERB:
+            conjugation = self.get_random_conjugation_for_word(
+                word.word_id, active_tenses
+            )
+            if conjugation:
+                # Возвращаем словарь с сырыми данными, а не отформатированную строку
+                description_dict = {
+                    "tense": conjugation.tense.value,
+                    "person": conjugation.person.value,
+                }
+                return (conjugation.hebrew_form, description_dict)
+
+        return (None, None)
+
     def create_cached_word(self, word_data: CreateCachedWord) -> int:
         cursor = self.connection.cursor()
 
@@ -256,7 +295,7 @@ class UserDictionaryRepository(BaseRepository):
             SELECT cw.*
             FROM cached_words cw
             JOIN user_dictionary ud ON cw.word_id = ud.word_id
-            WHERE ud.user_id = {self.param_style} AND (cw.part_of_speech != 'verb' OR cw.part_of_speech IS NULL)
+            WHERE ud.user_id = {self.param_style}
             ORDER BY {order_by_clause}
             LIMIT {self.param_style}
         """
@@ -268,6 +307,47 @@ class UserDictionaryRepository(BaseRepository):
         for word in words:
             word.translations = word_repo.get_translations_for_word(word.word_id)
         return words
+
+    def get_ready_for_training_words_count(self, user_id: int) -> int:
+        """
+        Шаг 1 оптимизации: Считает количество слов, готовых к тренировке. [cite: 133-134]
+        """
+        now_func = "NOW()" if self.is_postgres else "CURRENT_TIMESTAMP"
+        query = f"""
+            SELECT COUNT(id) FROM user_dictionary
+            WHERE user_id = {self.param_style} AND next_review_at <= {now_func}
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        return result[0] if result else 0
+
+    def get_word_for_training_with_offset(
+        self, user_id: int, offset: int
+    ) -> Optional[CachedWord]:
+        """
+        Шаг 2 оптимизации: Получает одно случайное слово для тренировки, используя offset. [cite: 137-139]
+        """
+        now_func = "NOW()" if self.is_postgres else "CURRENT_TIMESTAMP"
+        query = f"""
+            SELECT cw.*
+            FROM cached_words cw
+            JOIN user_dictionary ud ON cw.word_id = ud.word_id
+            WHERE ud.user_id = {self.param_style} AND ud.next_review_at <= {now_func}
+            ORDER BY ud.next_review_at ASC
+            LIMIT 1 OFFSET {self.param_style}
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, offset))
+        word_data_row = cursor.fetchone()
+
+        if not word_data_row:
+            return None
+
+        # Дозагружаем связанные данные (переводы и т.д.)
+        word_id = word_data_row["word_id"]
+        word_repo = WordRepository(self.connection, self.is_postgres)
+        return word_repo.get_word_by_id(word_id)
 
     def get_srs_level(self, user_id: int, word_id: int) -> Optional[int]:
         query = f"SELECT srs_level FROM user_dictionary WHERE user_id = {self.param_style} AND word_id = {self.param_style}"
@@ -290,22 +370,41 @@ class UserDictionaryRepository(BaseRepository):
 
 class UserSettingsRepository(BaseRepository):
     def get_user_settings(self, user_id: int) -> UserSettings:
-        query = f"SELECT tense, is_active FROM user_tense_settings WHERE user_id = {self.param_style}"
+        # 1. Получаем настройки времен
+        tense_query = f"SELECT tense, is_active FROM user_tense_settings WHERE user_id = {self.param_style}"
         cursor = self.connection.cursor()
-        cursor.execute(query, (user_id,))
-        rows = cursor.fetchall()
+        cursor.execute(tense_query, (user_id,))
+        tense_rows = cursor.fetchall()
 
-        tense_settings_list = [
-            UserTenseSetting(
-                user_id=user_id, tense=row["tense"], is_active=bool(row["is_active"])
-            )
-            for row in rows
-        ]
+        tense_settings_list = (
+            [
+                UserTenseSetting(
+                    user_id=user_id,
+                    tense=row["tense"],
+                    is_active=bool(row["is_active"]),
+                )
+                for row in tense_rows
+            ]
+            if tense_rows
+            else None
+        )
 
-        if len(tense_settings_list) == 0:
-            tense_settings_list = None
+        # 2. Получаем настройки режима тренировки
+        training_mode_query = f"SELECT use_grammatical_forms FROM user_settings WHERE user_id = {self.param_style}"
+        cursor.execute(training_mode_query, (user_id,))
+        training_mode_row = cursor.fetchone()
+        use_grammatical_forms = (
+            bool(training_mode_row["use_grammatical_forms"])
+            if training_mode_row
+            else False
+        )
 
-        return UserSettings(user_id=user_id, tense_settings=tense_settings_list)
+        # 3. Собираем всё в одну модель
+        return UserSettings(
+            user_id=user_id,
+            tense_settings=tense_settings_list,
+            use_grammatical_forms=use_grammatical_forms,
+        )
 
     def initialize_tense_settings(self, user_id: int):
         default_settings = [
@@ -321,6 +420,15 @@ class UserSettingsRepository(BaseRepository):
         cursor = self.connection.cursor()
         cursor.executemany(query, default_settings)
 
+    def initialize_user_settings(self, user_id: int):
+        # Новый метод для инициализации записи в user_settings [cite: 161-162]
+        if self.is_postgres:
+            query = f"INSERT INTO user_settings (user_id, use_grammatical_forms) VALUES ({self.param_style}, FALSE) ON CONFLICT (user_id) DO NOTHING"
+        else:
+            query = f"INSERT OR IGNORE INTO user_settings (user_id, use_grammatical_forms) VALUES ({self.param_style}, 0)"
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id,))
+
     def toggle_tense_setting(self, user_id: int, tense: Tense):
         query = f"""
             UPDATE user_tense_settings
@@ -329,3 +437,13 @@ class UserSettingsRepository(BaseRepository):
         """
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, tense.value))
+
+    def toggle_training_mode(self, user_id: int):
+        # Новый метод для переключения режима тренировки [cite: 165-166]
+        query = f"""
+            UPDATE user_settings
+            SET use_grammatical_forms = NOT use_grammatical_forms
+            WHERE user_id = {self.param_style}
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id,))
