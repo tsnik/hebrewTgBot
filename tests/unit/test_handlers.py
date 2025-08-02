@@ -10,6 +10,7 @@ from dal.models import (
     UserSettings,
     Tense,
     UserTenseSetting,
+    PartOfSpeech,
 )
 from handlers.common import start, main_menu, back_to_main_menu, display_word_card
 from telegram.ext import ConversationHandler
@@ -44,6 +45,8 @@ from config import (
     CB_SEARCH_PEALIM,
     CB_SELECT_WORD,
     CB_SETTINGS_MENU,
+    CB_TRAIN_HE_RU,
+    CB_TRAIN_RU_HE,
 )
 
 
@@ -779,16 +782,20 @@ async def test_start_flashcard_training_no_words():
     update.callback_query.from_user.id = 123
     context = MagicMock()
 
+    mock_user_settings = UserSettings(user_id=123, use_grammatical_forms=False)
+
     # ИСПРАВЛЕНИЕ: убран префикс 'app.'
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
-        mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
-        mock_uow_instance.user_dictionary.get_user_words_for_training.return_value = []
+        mock_uow = mock_uow_class.return_value.__enter__.return_value
+        mock_uow.user_settings.get_user_settings.return_value = mock_user_settings
+        # Метод get_ready_for_training_words_count должен возвращать int
+        mock_uow.user_dictionary.get_ready_for_training_words_count.return_value = 0
 
         await start_flashcard_training(update, context)
 
     update.callback_query.edit_message_text.assert_called_once()
     assert (
-        "В словаре нет слов"
+        "Все слова повторены"
         in update.callback_query.edit_message_text.call_args.args[0]
     )
 
@@ -814,6 +821,116 @@ async def test_start_verb_trainer_no_verbs():
         "В вашем словаре нет глаголов для тренировки"
         in update.callback_query.edit_message_text.call_args.args[0]
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "advanced_mode_enabled, training_direction, expected_question, expected_answer",
+    [
+        # --- Сценарий 1: ОБЫЧНЫЙ РЕЖИМ (HE -> RU) ---
+        (
+            False,
+            CB_TRAIN_HE_RU,
+            "ספר",  # Вопрос - базовая форма
+            "*ספר* [sefer]\n\nПеревод: *книга*",  # Ответ - стандартный
+        ),
+        # --- Сценарий 2: ОБЫЧНЫЙ РЕЖИМ (RU -> HE) ---
+        (
+            False,
+            CB_TRAIN_RU_HE,
+            "книга",  # Вопрос - перевод
+            "*ספר* [sefer]\n\nПеревод: *книга*",  # Ответ - стандартный
+        ),
+        # --- Сценарий 3: ПРОДВИНУТЫЙ РЕЖИМ (HE -> RU) ---
+        (
+            True,
+            CB_TRAIN_HE_RU,
+            "ספרים",  # Вопрос - случайная форма
+            "*ספר* [sefer]\n\nПеревод: *книга*\n_(мн.ч.)_",  # Ответ - базовая форма + описание
+        ),
+        # --- Сценарий 4: ПРОДВИНУТЫЙ РЕЖИМ (RU -> HE) ---
+        (
+            True,
+            CB_TRAIN_RU_HE,
+            "книга (мн.ч.)",  # Вопрос - перевод + описание
+            "ספר → *ספרים*\n\nПеревод: *книга*",  # Ответ - с подсветкой формы
+        ),
+    ],
+)
+async def test_flashcard_training_flow(
+    advanced_mode_enabled,
+    training_direction,
+    expected_question,
+    expected_answer,
+    monkeypatch,
+):
+    """
+    Комплексный тест: проверяет логику старта, вопроса и ответа
+    в обычном и продвинутом режимах тренировки.
+    """
+    update = AsyncMock()
+    update.callback_query.data = training_direction
+    update.callback_query.from_user.id = 123
+    context = MagicMock()
+    context.user_data = {}
+
+    # --- Подготовка моков ---
+    mock_word = CachedWord(
+        word_id=1,
+        hebrew="ספר",
+        normalized_hebrew="ספר",
+        transcription="sefer",
+        part_of_speech=PartOfSpeech.NOUN,
+        translations=[
+            Translation(
+                translation_id=1, word_id=1, translation_text="книга", is_primary=True
+            )
+        ],
+        singular_form="ספר",
+        plural_form="ספרים",
+        fetched_at=datetime.now(),
+    )
+
+    mock_user_settings = UserSettings(
+        user_id=123,
+        use_grammatical_forms=advanced_mode_enabled,
+        tense_settings=[
+            UserTenseSetting(user_id=123, tense=Tense.PRESENT, is_active=True)
+        ],
+    )
+
+    with patch("handlers.training.UnitOfWork") as mock_uow_class:
+        mock_uow = mock_uow_class.return_value.__enter__.return_value
+        mock_uow.user_settings.get_user_settings.return_value = mock_user_settings
+        mock_uow.user_dictionary.get_ready_for_training_words_count.return_value = 1
+        mock_uow.user_dictionary.get_word_for_training_with_offset.return_value = (
+            mock_word
+        )
+
+        # Мокируем get_random_grammatical_form, чтобы она всегда возвращала множественное число
+        if advanced_mode_enabled:
+            mock_uow.words.get_random_grammatical_form.return_value = ("ספרים", "мн.ч.")
+
+        # --- 1. Тестируем start_flashcard_training ---
+        await start_flashcard_training(update, context)
+
+        # Проверяем, что в user_data сохранились правильные данные
+        assert context.user_data["words"][0]["word"].hebrew == "ספר"
+        if advanced_mode_enabled:
+            assert context.user_data["words"][0]["form"] == "ספרים"
+
+        # --- 2. Тестируем show_next_card ---
+        await show_next_card(update, context)
+
+        call_args, call_kwargs = update.callback_query.edit_message_text.call_args
+        # Проверяем текст в словаре именованных аргументов kwargs
+        assert f"*{expected_question}*" in call_kwargs["text"]
+
+        # --- 3. Тестируем show_answer ---
+        await show_answer(update, context)
+
+        call_args, call_kwargs = update.callback_query.edit_message_text.call_args
+        assert call_args[0] == expected_answer
 
 
 @pytest.mark.asyncio
@@ -1000,28 +1117,31 @@ async def test_start_flashcard_training_with_words():
     context = MagicMock()
     context.user_data = {}
 
-    mock_words = [
-        CachedWord(
-            word_id=1,
-            hebrew="שלום",
-            normalized_hebrew="שלום",
-            is_verb=False,
-            fetched_at=datetime.now(),
-            translations=[
-                Translation(
-                    translation_id=1,
-                    word_id=1,
-                    translation_text="привет",
-                    is_primary=True,
-                )
-            ],
-        )
-    ]
+    mock_word = CachedWord(
+        word_id=1,
+        hebrew="שלום",
+        normalized_hebrew="שלום",
+        is_verb=False,
+        fetched_at=datetime.now(),
+        translations=[
+            Translation(
+                translation_id=1,
+                word_id=1,
+                translation_text="привет",
+                is_primary=True,
+            )
+        ],
+    )
+
+    mock_user_settings = UserSettings(user_id=123, use_grammatical_forms=False)
 
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
-        mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
-        mock_uow_instance.user_dictionary.get_user_words_for_training.return_value = (
-            mock_words
+        mock_uow = mock_uow_class.return_value.__enter__.return_value
+        mock_uow.user_settings.get_user_settings.return_value = mock_user_settings
+        # Метод get_ready_for_training_words_count должен возвращать int
+        mock_uow.user_dictionary.get_ready_for_training_words_count.return_value = 1
+        mock_uow.user_dictionary.get_word_for_training_with_offset.return_value = (
+            mock_word
         )
 
         # Мокаем show_next_card, так как это отдельная функция в цепочке
@@ -1030,7 +1150,7 @@ async def test_start_flashcard_training_with_words():
         ) as mock_show_next:
             await start_flashcard_training(update, context)
 
-            assert context.user_data["words"][0].hebrew == mock_words[0].hebrew
+            assert context.user_data["words"][0]["word"].hebrew == mock_word.hebrew
             assert context.user_data["training_mode"] == "train:he_ru"
             mock_show_next.assert_called_once()
 
@@ -1074,7 +1194,11 @@ async def test_show_answer():
         ],
         fetched_at=datetime.now(),
     )
-    context.user_data = {"words": [mock_word], "idx": 0}
+    context.user_data = {
+        "words": [{"word": mock_word}],  # <-- Теперь это список словарей
+        "idx": 0,
+        "training_mode": CB_TRAIN_HE_RU,  # Добавляем режим для полной эмуляции
+    }
 
     await show_answer(update, context)
 
@@ -1086,33 +1210,38 @@ async def test_show_answer():
 
 
 @pytest.mark.asyncio
-# CORRECTED: Use the imported constants instead of hardcoded strings
 @pytest.mark.parametrize(
     "evaluation, expected_srs", [(CB_EVAL_CORRECT, 1), (CB_EVAL_INCORRECT, 0)]
 )
 async def test_handle_self_evaluation_logic(evaluation, expected_srs):
     """Тест: обработка самооценки (правильно/неправильно) и обновление SRS."""
     update = AsyncMock()
-    update.callback_query.data = evaluation  # Now uses the constant
+    update.callback_query.data = evaluation
     update.callback_query.from_user.id = 123
     context = MagicMock()
+
     mock_word = CachedWord(
         word_id=1,
         hebrew="שלום",
         normalized_hebrew="שלום",
         fetched_at=datetime.now(),
     )
-    context.user_data = {"words": [mock_word], "idx": 0, "correct": 0}
+
+    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Эмулируем новую структуру user_data ---
+    context.user_data = {
+        "words": [{"word": mock_word}],  # <-- Теперь это список словарей
+        "idx": 0,
+        "correct": 0,
+    }
+
     with patch("handlers.training.UnitOfWork") as mock_uow_class:
         mock_uow_instance = mock_uow_class.return_value.__enter__.return_value
-        # The current SRS level is 0 before the evaluation
         mock_uow_instance.user_dictionary.get_srs_level.return_value = 0
 
         with patch("handlers.training.show_next_card", new_callable=AsyncMock):
             await handle_self_evaluation(update, context)
 
             mock_uow_instance.user_dictionary.update_srs_level.assert_called_once()
-            # This assertion will now pass because the correct logic path is triggered
             call_args, _ = mock_uow_instance.user_dictionary.update_srs_level.call_args
             assert call_args[0] == expected_srs
             mock_uow_instance.commit.assert_called_once()

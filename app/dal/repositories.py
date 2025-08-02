@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-
-from typing import Optional, List, Any, Dict
+import random
+from typing import Optional, List, Any, Dict, Tuple
 from datetime import datetime
 
 from psycopg2.extras import DictRow
@@ -13,6 +13,7 @@ from dal.models import (
     UserSettings,
     UserTenseSetting,
     Tense,
+    PartOfSpeech,
 )
 from services.connection import Connection
 
@@ -144,6 +145,44 @@ class WordRepository(BaseRepository):
         result = cursor.fetchone()
         return result["hebrew"] if result else None
 
+    def get_random_grammatical_form(
+        self, word: CachedWord, active_tenses: List[str]
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Выбирает случайную грамматическую форму для слова в зависимости от части речи."""
+        if word.part_of_speech == PartOfSpeech.NOUN:
+            forms = []
+            if word.singular_form:
+                forms.append((word.singular_form, "ед.ч."))
+            if word.plural_form:
+                forms.append((word.plural_form, "мн.ч."))
+            return random.choice(forms) if forms else (None, None)
+
+        if word.part_of_speech == PartOfSpeech.ADJECTIVE:
+            forms = []
+            if word.masculine_singular:
+                forms.append((word.masculine_singular, "м.р., ед.ч."))
+            if word.feminine_singular:
+                forms.append((word.feminine_singular, "ж.р., ед.ч."))
+            if word.masculine_plural:
+                forms.append((word.masculine_plural, "м.р., мн.ч."))
+            if word.feminine_plural:
+                forms.append((word.feminine_plural, "ж.р., мн.ч."))
+            return random.choice(forms) if forms else (None, None)
+
+        if word.part_of_speech == PartOfSpeech.VERB:
+            conjugation = self.get_random_conjugation_for_word(
+                word.word_id, active_tenses
+            )
+            if conjugation:
+                # Возвращаем словарь с сырыми данными, а не отформатированную строку
+                description_dict = {
+                    "tense": conjugation.tense.value,
+                    "person": conjugation.person.value,
+                }
+                return (conjugation.hebrew_form, description_dict)
+
+        return (None, None)
+
     def create_cached_word(self, word_data: CreateCachedWord) -> int:
         cursor = self.connection.cursor()
 
@@ -256,7 +295,7 @@ class UserDictionaryRepository(BaseRepository):
             SELECT cw.*
             FROM cached_words cw
             JOIN user_dictionary ud ON cw.word_id = ud.word_id
-            WHERE ud.user_id = {self.param_style} AND (cw.part_of_speech != 'verb' OR cw.part_of_speech IS NULL)
+            WHERE ud.user_id = {self.param_style}
             ORDER BY {order_by_clause}
             LIMIT {self.param_style}
         """
@@ -268,6 +307,47 @@ class UserDictionaryRepository(BaseRepository):
         for word in words:
             word.translations = word_repo.get_translations_for_word(word.word_id)
         return words
+
+    def get_ready_for_training_words_count(self, user_id: int) -> int:
+        """
+        Шаг 1 оптимизации: Считает количество слов, готовых к тренировке. [cite: 133-134]
+        """
+        now_func = "NOW()" if self.is_postgres else "CURRENT_TIMESTAMP"
+        query = f"""
+            SELECT COUNT(id) FROM user_dictionary
+            WHERE user_id = {self.param_style} AND next_review_at <= {now_func}
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        return result[0] if result else 0
+
+    def get_word_for_training_with_offset(
+        self, user_id: int, offset: int
+    ) -> Optional[CachedWord]:
+        """
+        Шаг 2 оптимизации: Получает одно случайное слово для тренировки, используя offset. [cite: 137-139]
+        """
+        now_func = "NOW()" if self.is_postgres else "CURRENT_TIMESTAMP"
+        query = f"""
+            SELECT cw.*
+            FROM cached_words cw
+            JOIN user_dictionary ud ON cw.word_id = ud.word_id
+            WHERE ud.user_id = {self.param_style} AND ud.next_review_at <= {now_func}
+            ORDER BY ud.next_review_at ASC
+            LIMIT 1 OFFSET {self.param_style}
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id, offset))
+        word_data_row = cursor.fetchone()
+
+        if not word_data_row:
+            return None
+
+        # Дозагружаем связанные данные (переводы и т.д.)
+        word_id = word_data_row["word_id"]
+        word_repo = WordRepository(self.connection, self.is_postgres)
+        return word_repo.get_word_by_id(word_id)
 
     def get_srs_level(self, user_id: int, word_id: int) -> Optional[int]:
         query = f"SELECT srs_level FROM user_dictionary WHERE user_id = {self.param_style} AND word_id = {self.param_style}"

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime, timedelta
-
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -82,24 +82,79 @@ async def training_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def start_flashcard_training(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    """Начинает тренировку с карточками."""
+    """Начинает тренировку с карточками, учитывая продвинутый режим."""
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
     context.user_data["training_mode"] = query.data
 
     with UnitOfWork() as uow:
-        words = uow.user_dictionary.get_user_words_for_training(query.from_user.id, 10)
+        user_settings = uow.user_settings.get_user_settings(user_id)
 
-    if not words:
+        # Шаг 1: Оптимизированная проверка наличия слов [cite: 133-134]
+        ready_words_count = uow.user_dictionary.get_ready_for_training_words_count(
+            user_id
+        )
+
+        if ready_words_count == 0:
+            await query.edit_message_text(
+                "Все слова повторены! Зайдите позже или добавьте новые.",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("⬅️ Назад", callback_data=CB_TRAIN_MENU)]]
+                ),
+            )
+            return TRAINING_MENU_STATE
+
+        # Шаг 2: Оптимизированная выборка слов для сессии
+        words_for_session = []
+        # Ограничиваем количество слов в сессии (например, 10)
+        session_limit = min(10, ready_words_count)
+
+        # Используем set для отслеживания уже выбранных offset'ов, чтобы избежать дублей
+        used_offsets = set()
+
+        # Пытаемся набрать нужное количество уникальных слов для сессии
+        while (
+            len(words_for_session) < session_limit
+            and len(used_offsets) < ready_words_count
+        ):
+            offset = random.randint(0, ready_words_count - 1)
+            if offset in used_offsets:
+                continue
+
+            used_offsets.add(offset)
+            word = uow.user_dictionary.get_word_for_training_with_offset(
+                user_id, offset
+            )
+
+            if word:
+                # `item` - это словарь, который будет хранить всю информацию о карточке
+                item = {"word": word}
+
+                # --- Логика Продвинутого режима ---
+                if user_settings.use_grammatical_forms:
+                    active_tenses = user_settings.get_active_tenses()
+                    form, description = uow.words.get_random_grammatical_form(
+                        word, active_tenses
+                    )
+
+                    # Если форма успешно сгенерирована, добавляем ее в item
+                    if form and description:
+                        item["form"] = form
+                        item["description"] = description
+
+                words_for_session.append(item)
+
+    if not words_for_session:
         await query.edit_message_text(
-            "В словаре нет слов (существительных/прилагательных) для этой тренировки.",
+            "Не нашлось подходящих слов для тренировки. Попробуйте позже.",
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton("⬅️ Назад", callback_data=CB_TRAIN_MENU)]]
             ),
         )
         return TRAINING_MENU_STATE
 
-    context.user_data.update({"words": words, "idx": 0, "correct": 0})
+    context.user_data.update({"words": words_for_session, "idx": 0, "correct": 0})
     return await show_next_card(update, context)
 
 
@@ -134,12 +189,32 @@ async def show_next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data.clear()
         return TRAINING_MENU_STATE
 
-    word = words[idx]
-    question = (
-        word.hebrew
-        if context.user_data["training_mode"] == CB_TRAIN_HE_RU
-        else word.translations[0].translation_text
-    )
+    # Получаем всю информацию о текущей карточке
+    item = words[idx]
+    word = item["word"]
+    form = item.get("form")
+    description = item.get("description")
+
+    # --- Формируем вопрос в зависимости от режима ---
+    if context.user_data["training_mode"] == CB_TRAIN_HE_RU:
+        # Вопрос: форма на иврите (если есть), или базовая форма
+        question = form if form else word.hebrew
+    else:  # RU -> HE
+        question = word.translations[0].translation_text
+        # Добавляем описание формы к вопросу, если оно есть
+        if description:
+            # Если описание - словарь (для глаголов), форматируем его
+            if isinstance(description, dict):
+                person_display = PERSON_MAP.get(
+                    description["person"], description["person"]
+                )
+                tense_display = TENSE_MAP.get(
+                    description["tense"], description["tense"]
+                ).capitalize()
+                question += f" ({tense_display}, {person_display})"
+            else:  # Для существительных и прилагательных
+                question += f" ({description})"
+
     keyboard = [
         [InlineKeyboardButton("💡 Показать ответ", callback_data=CB_SHOW_ANSWER)],
         [InlineKeyboardButton("❌ Закончить", callback_data=CB_END_TRAINING)],
@@ -159,12 +234,43 @@ async def show_next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 @increment_callbacks_counter
 @set_request_id
 async def show_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Показывает ответ на карточке."""
+    """Показывает ответ на карточке (с учетом формы и подсветкой)."""
     query = update.callback_query
     await query.answer()
 
-    word = context.user_data["words"][context.user_data["idx"]]
-    answer_text = f"*{word.hebrew}* [{word.transcription}]\n\nПеревод: *{word.translations[0].translation_text}*"
+    item = context.user_data["words"][context.user_data["idx"]]
+    word = item["word"]
+    form = item.get("form")
+    description = item.get("description")
+
+    base_hebrew = word.hebrew
+    translation = word.translations[0].translation_text
+    transcription = word.transcription
+
+    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Новая, более явная и корректная логика ---
+    if form and description:
+        # Сценарий: Продвинутый режим [🇷🇺 → 🇮🇱]
+        if context.user_data["training_mode"] == CB_TRAIN_RU_HE:
+            answer_text = f"{base_hebrew} → *{form}*\n\nПеревод: *{translation}*"
+        # Сценарий: Продвинутый режим [🇮🇱 → 🇷🇺]
+        else:  # CB_TRAIN_HE_RU
+            # Форматируем описание для вывода
+            if isinstance(description, dict):
+                person_display = PERSON_MAP.get(
+                    description["person"], description["person"]
+                )
+                tense_display = TENSE_MAP.get(
+                    description["tense"], description["tense"]
+                ).capitalize()
+                description_str = f"({tense_display}, {person_display})"
+            else:
+                description_str = f"({description})"
+
+            answer_text = f"*{base_hebrew}* [{transcription}]\n\nПеревод: *{translation}*\n_{description_str}_"
+    else:
+        # Сценарий: Обычный режим
+        answer_text = f"*{base_hebrew}* [{transcription}]\n\nПеревод: *{translation}*"
+
     keyboard = [
         [InlineKeyboardButton("✅ Знаю", callback_data=CB_EVAL_CORRECT)],
         [InlineKeyboardButton("❌ Не знаю", callback_data=CB_EVAL_INCORRECT)],
@@ -184,7 +290,8 @@ async def handle_self_evaluation(
 ) -> int:
     """Обрабатывает самооценку пользователя (знаю/не знаю)."""
     query = update.callback_query
-    word = context.user_data["words"][context.user_data["idx"]]
+    item = context.user_data["words"][context.user_data["idx"]]
+    word = item["word"]
 
     with UnitOfWork() as uow:
         srs_level = uow.user_dictionary.get_srs_level(query.from_user.id, word.word_id)
