@@ -1,0 +1,4 @@
+-- step: 1
+-- description: Revert user_settings table creation
+
+DROP TABLE IF EXISTS user_settings;

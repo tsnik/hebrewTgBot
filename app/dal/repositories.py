@@ -290,22 +290,41 @@ class UserDictionaryRepository(BaseRepository):
 
 class UserSettingsRepository(BaseRepository):
     def get_user_settings(self, user_id: int) -> UserSettings:
-        query = f"SELECT tense, is_active FROM user_tense_settings WHERE user_id = {self.param_style}"
+        # 1. Получаем настройки времен
+        tense_query = f"SELECT tense, is_active FROM user_tense_settings WHERE user_id = {self.param_style}"
         cursor = self.connection.cursor()
-        cursor.execute(query, (user_id,))
-        rows = cursor.fetchall()
+        cursor.execute(tense_query, (user_id,))
+        tense_rows = cursor.fetchall()
 
-        tense_settings_list = [
-            UserTenseSetting(
-                user_id=user_id, tense=row["tense"], is_active=bool(row["is_active"])
-            )
-            for row in rows
-        ]
+        tense_settings_list = (
+            [
+                UserTenseSetting(
+                    user_id=user_id,
+                    tense=row["tense"],
+                    is_active=bool(row["is_active"]),
+                )
+                for row in tense_rows
+            ]
+            if tense_rows
+            else None
+        )
 
-        if len(tense_settings_list) == 0:
-            tense_settings_list = None
+        # 2. Получаем настройки режима тренировки
+        training_mode_query = f"SELECT use_grammatical_forms FROM user_settings WHERE user_id = {self.param_style}"
+        cursor.execute(training_mode_query, (user_id,))
+        training_mode_row = cursor.fetchone()
+        use_grammatical_forms = (
+            bool(training_mode_row["use_grammatical_forms"])
+            if training_mode_row
+            else False
+        )
 
-        return UserSettings(user_id=user_id, tense_settings=tense_settings_list)
+        # 3. Собираем всё в одну модель
+        return UserSettings(
+            user_id=user_id,
+            tense_settings=tense_settings_list,
+            use_grammatical_forms=use_grammatical_forms,
+        )
 
     def initialize_tense_settings(self, user_id: int):
         default_settings = [
@@ -321,6 +340,15 @@ class UserSettingsRepository(BaseRepository):
         cursor = self.connection.cursor()
         cursor.executemany(query, default_settings)
 
+    def initialize_user_settings(self, user_id: int):
+        # Новый метод для инициализации записи в user_settings [cite: 161-162]
+        if self.is_postgres:
+            query = f"INSERT INTO user_settings (user_id, use_grammatical_forms) VALUES ({self.param_style}, FALSE) ON CONFLICT (user_id) DO NOTHING"
+        else:
+            query = f"INSERT OR IGNORE INTO user_settings (user_id, use_grammatical_forms) VALUES ({self.param_style}, 0)"
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id,))
+
     def toggle_tense_setting(self, user_id: int, tense: Tense):
         query = f"""
             UPDATE user_tense_settings
@@ -329,3 +357,13 @@ class UserSettingsRepository(BaseRepository):
         """
         cursor = self.connection.cursor()
         cursor.execute(query, (user_id, tense.value))
+
+    def toggle_training_mode(self, user_id: int):
+        # Новый метод для переключения режима тренировки [cite: 165-166]
+        query = f"""
+            UPDATE user_settings
+            SET use_grammatical_forms = NOT use_grammatical_forms
+            WHERE user_id = {self.param_style}
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(query, (user_id,))

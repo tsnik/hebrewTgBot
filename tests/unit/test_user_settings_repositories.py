@@ -35,6 +35,56 @@ def test_initialize_and_get_user_settings(
     assert settings_dict["imp"] is True
 
 
+def test_initialize_and_get_general_user_settings(
+    user_settings_repo: UserSettingsRepository, unique_user_id: int
+):
+    """
+    Тест:
+    1. Общие настройки (use_grammatical_forms) корректно создаются.
+    2. get_user_settings правильно их считывает.
+    """
+    user_id = unique_user_id
+
+    # 1. Вызываем инициализацию для общих настроек
+    with user_settings_repo.connection:
+        user_settings_repo.initialize_user_settings(user_id)
+
+    # 2. Получаем настройки
+    settings = user_settings_repo.get_user_settings(user_id)
+
+    # 3. Проверяем, что значение по умолчанию (False) было установлено и считано
+    assert settings.use_grammatical_forms is False
+
+
+def test_toggle_training_mode(
+    user_settings_repo: UserSettingsRepository, unique_user_id: int
+):
+    """Тест: переключение режима тренировки use_grammatical_forms."""
+    user_id = unique_user_id
+
+    # 1. Инициализируем настройки
+    with user_settings_repo.connection:
+        user_settings_repo.initialize_user_settings(user_id)
+
+    # 2. Проверяем начальное состояние (False)
+    initial_settings = user_settings_repo.get_user_settings(user_id)
+    assert initial_settings.use_grammatical_forms is False
+
+    # 3. Переключаем режим в True
+    with user_settings_repo.connection:
+        user_settings_repo.toggle_training_mode(user_id)
+
+    toggled_settings_true = user_settings_repo.get_user_settings(user_id)
+    assert toggled_settings_true.use_grammatical_forms is True
+
+    # 4. Переключаем режим обратно в False
+    with user_settings_repo.connection:
+        user_settings_repo.toggle_training_mode(user_id)
+
+    toggled_settings_false = user_settings_repo.get_user_settings(user_id)
+    assert toggled_settings_false.use_grammatical_forms is False
+
+
 def test_toggle_tense_setting(
     user_settings_repo: UserSettingsRepository, unique_user_id: int
 ):

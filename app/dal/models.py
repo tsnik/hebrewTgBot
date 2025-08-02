@@ -169,6 +169,7 @@ class UserTenseSetting(BaseModel):
 class UserSettings(BaseModel):
     user_id: int
     tense_settings: Optional[List[UserTenseSetting]] = None
+    use_grammatical_forms: bool = False
 
     def get_active_tenses(self) -> List[str]:
         """Возвращает список активных времен в виде строк."""
