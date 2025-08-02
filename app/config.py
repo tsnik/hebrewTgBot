@@ -86,6 +86,7 @@ CB_END_TRAINING = "train:end"
 CB_SETTINGS_MENU = "settings:menu"
 CB_TENSES_MENU = "settings:tenses_menu"
 CB_TENSE_TOGGLE = "settings:tense_toggle"
+CB_TOGGLE_TRAINING_MODE = "settings:toggle_training_mode"
 
 
 # ДОБАВЛЕН СЛОВАРЬ ДЛЯ ОТОБРАЖЕНИЯ ЛИЦ
