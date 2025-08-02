@@ -11,11 +11,11 @@ from dal.models import CreateTranslation, PartOfSpeech, CreateNoun
 
 
 @pytest.mark.asyncio
-async def test_add_word_to_dictionary(memory_db):
+async def test_add_word_to_dictionary(patch_db_url, unique_user):
     """Тестирует добавление слова в словарь."""
     update = Mock()
     update.callback_query = AsyncMock()
-    update.callback_query.from_user.id = 123
+    update.callback_query.from_user.id = unique_user
     # ID слова теперь 1, так как база данных для каждого теста чистая
     update.callback_query.data = "word:add:1"
     context = Mock()
@@ -40,7 +40,7 @@ async def test_add_word_to_dictionary(memory_db):
 
 
 @pytest.mark.asyncio
-async def test_delete_word_from_dictionary(memory_db):
+async def test_delete_word_from_dictionary(patch_db_url):
     """Тестирует удаление слова из словаря пользователя."""
     update = Mock()
     query = AsyncMock()
@@ -94,7 +94,7 @@ async def test_delete_word_from_dictionary(memory_db):
 
 
 @pytest.mark.asyncio
-async def test_view_dictionary_pagination(memory_db):
+async def test_view_dictionary_pagination(patch_db_url):
     """Test pagination of the user's dictionary."""
     update = Mock()
     query = AsyncMock()

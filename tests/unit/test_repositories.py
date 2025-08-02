@@ -1,5 +1,4 @@
 import pytest
-import sqlite3
 from datetime import datetime
 
 # Импортируем Pydantic-модели для создания данных
@@ -16,23 +15,10 @@ from dal.models import (
 from dal.repositories import WordRepository, UserDictionaryRepository
 from dal.unit_of_work import UnitOfWork
 
-# Прагма для обеспечения целостности данных в тестах
-DB_PRAGMA = "PRAGMA foreign_keys = ON;"
 
-
-def get_test_connection(memory_db_uri: str) -> sqlite3.Connection:
-    """Вспомогательная функция для создания подключения к тестовой БД."""
-    connection = sqlite3.connect(
-        memory_db_uri, uri=True, detect_types=sqlite3.PARSE_DECLTYPES
-    )
-    connection.row_factory = sqlite3.Row
-    connection.execute(DB_PRAGMA)
-    return connection
-
-
-def test_word_repository(memory_db):
+def test_word_repository(db_session):
     """Тестирует базовые операции WordRepository с новыми моделями."""
-    connection = get_test_connection(memory_db)
+    connection = db_session
     repo = WordRepository(connection)
 
     # 1. Готовим данные с использованием типизированных моделей
@@ -77,12 +63,10 @@ def test_word_repository(memory_db):
     assert len(found_word.conjugations) == 1
     assert found_word.conjugations[0].hebrew_form == "כּוֹתֵב"
 
-    connection.close()
 
-
-def test_srs_level_management(memory_db):
+def test_srs_level_management(db_session):
     """Тестирует управление SRS-уровнем слова."""
-    connection = get_test_connection(memory_db)
+    connection = db_session
     word_repo = WordRepository(connection)
     user_repo = UserDictionaryRepository(connection)
     user_id = 101
@@ -111,12 +95,10 @@ def test_srs_level_management(memory_db):
     assert retrieved_srs_level is not None
     assert retrieved_srs_level == srs_level
 
-    connection.close()
 
-
-def test_get_user_words_for_training(memory_db):
+def test_get_user_words_for_training(db_session):
     """Тестирует получение слов для тренировки (глаголы должны быть исключены)."""
-    connection = get_test_connection(memory_db)
+    connection = db_session
     word_repo = WordRepository(connection)
     user_repo = UserDictionaryRepository(connection)
     user_id = 789
@@ -167,12 +149,10 @@ def test_get_user_words_for_training(memory_db):
     assert training_words[0].word_id == noun_id
     assert training_words[0].part_of_speech == "noun"
 
-    connection.close()
 
-
-def test_get_random_verb_for_training(memory_db):
+def test_get_random_verb_for_training(db_session):
     """Тестирует получение случайного глагола для тренировки."""
-    connection = get_test_connection(memory_db)
+    connection = db_session
     word_repo = WordRepository(connection)
     user_repo = UserDictionaryRepository(connection)
     user_id = 456
@@ -199,12 +179,10 @@ def test_get_random_verb_for_training(memory_db):
     assert random_verb.word_id == verb_id
     assert random_verb.part_of_speech == "verb"
 
-    connection.close()
 
-
-def test_find_words_by_normalized_form(memory_db):
+def test_find_words_by_normalized_form(db_session):
     """Тестирует поиск слов по нормализованной форме."""
-    connection = get_test_connection(memory_db)
+    connection = db_session
     repo = WordRepository(connection)
 
     with connection:
@@ -224,12 +202,10 @@ def test_find_words_by_normalized_form(memory_db):
     assert len(found_words) == 1
     assert found_words[0].hebrew == "בְּדִיקָה"
 
-    connection.close()
 
-
-def test_get_word_by_id(memory_db):
+def test_get_word_by_id(db_session):
     """Тестирует получение слова по его ID."""
-    connection = get_test_connection(memory_db)
+    connection = db_session
     repo = WordRepository(connection)
 
     with connection:
@@ -254,12 +230,10 @@ def test_get_word_by_id(memory_db):
     assert len(found_word.translations) == 1
     assert found_word.translations[0].translation_text == "to test"
 
-    connection.close()
 
-
-def test_user_dictionary_repository(memory_db):
+def test_user_dictionary_repository(db_session):
     """Тестирует полный цикл операций со словарём пользователя."""
-    connection = get_test_connection(memory_db)
+    connection = db_session
     word_repo = WordRepository(connection)
     user_repo = UserDictionaryRepository(connection)
     user_id = 123
@@ -290,12 +264,10 @@ def test_user_dictionary_repository(memory_db):
     page_after_delete = user_repo.get_dictionary_page(user_id, 0, 10)
     assert len(page_after_delete) == 0
 
-    connection.close()
 
-
-def test_word_repository_transaction_rollback(memory_db):
+def test_word_repository_transaction_rollback(db_session):
     """Тестирует, что транзакция откатывается при ошибке."""
-    connection = get_test_connection(memory_db)
+    connection = db_session
     repo = WordRepository(connection)
 
     # Создаем заведомо невалидные данные (неправильный тип в списке)
@@ -317,5 +289,3 @@ def test_word_repository_transaction_rollback(memory_db):
     # После ошибки и автоматического отката слово не должно существовать в БД
     found_word = repo.find_words_by_normalized_form("להכשל")
     assert not found_word, "Слово не должно было быть создано из-за отката транзакции."
-
-    connection.close()

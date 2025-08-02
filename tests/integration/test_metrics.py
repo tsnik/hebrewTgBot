@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock
 from telegram import Update
-from app.metrics import MESSAGES_COUNTER, CALLBACKS_COUNTER
-from app.handlers.search import handle_text_message
-from app.handlers.common import main_menu
+from metrics import MESSAGES_COUNTER, CALLBACKS_COUNTER
+from handlers.search import handle_text_message
+from handlers.common import main_menu
 
 
 @pytest.mark.asyncio

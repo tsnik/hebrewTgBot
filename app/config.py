@@ -12,6 +12,7 @@ load_dotenv()
 # --- КОНФИГУРАЦИЯ БОТА ---
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", None)
 DB_NAME = "data/hebrew_helper_cache.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/hebrew_helper_cache.db")
 
 # --- НАСТРОЙКИ ПАРСЕРА И БД ---
 PARSING_TIMEOUT = 15

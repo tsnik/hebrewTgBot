@@ -1,79 +1,65 @@
 # -*- coding: utf-8 -*-
-
 import logging
 import sqlite3
 import threading
 from types import TracebackType
-from typing import Optional, Type
+from typing import Optional, Type, Union
 
-from config import DB_NAME
+import psycopg2
+from psycopg2.extensions import connection as psycopg2_connection
+from psycopg2.extras import DictCursor
 
-# Настраиваем логгер
+from config import DATABASE_URL
+
 logger = logging.getLogger(__name__)
+
+# Определяем общий тип для соединений, чтобы использовать в аннотациях
+Connection = Union[sqlite3.Connection, psycopg2_connection]
 
 
 class DatabaseConnectionManager:
     """
-    Manages SQLite database connections, supporting read-only and read-write modes.
-    Handles URI-based connections for advanced options like shared in-memory databases.
+    Manages database connections for both SQLite and PostgreSQL.
+    The database type is determined by the connection string.
     """
 
-    def __init__(self, db_name: str, read_only: bool = True):
-        self.db_name = db_name
-        self.read_only = read_only
-        self.connection: Optional[sqlite3.Connection] = None
+    def __init__(self, db_url: str, db_schema: Optional[str] = None):
+        self.db_url = db_url
+        self.connection: Optional[Connection] = None
         self._lock = threading.Lock()
-        logger.debug(
-            f"Инициализирован менеджер соединений для '{self.db_name}' (read_only={self.read_only})"
-        )
+        self.is_postgres = self.db_url.startswith("postgres")
+        self.db_schema = db_schema
+        logger.debug(f"Инициализирован менеджер соединений для '{self.db_url}'")
 
-    def __enter__(self) -> sqlite3.Connection:
+    def __enter__(self) -> Connection:
         with self._lock:
-            # Предотвращаем повторное открытие уже существующего соединения
             if self.connection:
                 return self.connection
 
-            db_uri = self.db_name
-            # Для соединений только для чтения, мы можем использовать URI с `mode=ro`
-            if self.read_only:
-                # Убеждаемся, что строка начинается с 'file:' для использования URI
-                if not db_uri.startswith("file:"):
-                    db_uri = f"file:{db_uri}"
-
-                # Корректно добавляем параметр mode=ro
-                if "?" in db_uri:
-                    db_uri = f"{db_uri}&mode=ro"
-                else:
-                    db_uri = f"{db_uri}?mode=ro"
-
-            logger.info(f"Попытка подключения к БД: {db_uri}")
+            logger.info(f"Попытка подключения к БД: {self.db_url}")
             try:
-                self.connection = sqlite3.connect(
-                    db_uri, uri=True, check_same_thread=False
-                )
-                self.connection.row_factory = sqlite3.Row
-                logger.info(f"Успешное подключение к {db_uri}")
-            except sqlite3.OperationalError as e:
-                # Это может произойти, если БД еще не существует, а мы в режиме read-only
-                if "unable to open database file" in str(e) and self.read_only:
-                    logger.warning(
-                        f"Не удалось открыть БД в режиме read-only (возможно, она не создана). "
-                        f"Откат к режиму read-write: {self.db_name}"
-                    )
-                    # Откатываемся к режиму read-write для создания БД
+                if self.is_postgres:
+                    self.connection = psycopg2.connect(self.db_url)
+                    self.connection.cursor_factory = DictCursor  # noqa
+                    if self.db_schema:
+                        self.connection.cursor().execute(
+                            f"SET search_path TO {self.db_schema};"
+                        )
+                        self.connection.commit()
+                else:
+                    # Для SQLite используем старую логику с URI
                     self.connection = sqlite3.connect(
-                        self.db_name, uri=True, check_same_thread=False
+                        self.db_url, uri=True, check_same_thread=False
                     )
                     self.connection.row_factory = sqlite3.Row
-                    logger.info(
-                        f"Успешное подключение к {self.db_name} в режиме read-write."
-                    )
-                else:
-                    logger.error(
-                        f"Не удалось подключиться к БД: {db_uri}", exc_info=True
-                    )
-                    raise e
-            return self.connection
+
+                logger.info(f"Успешное подключение к {self.db_url}")
+                return self.connection
+            except (sqlite3.OperationalError, psycopg2.OperationalError) as e:
+                logger.error(
+                    f"Не удалось подключиться к БД: {self.db_url}", exc_info=True
+                )
+                raise e
 
     def __exit__(
         self,
@@ -82,11 +68,10 @@ class DatabaseConnectionManager:
         traceback: Optional[TracebackType],
     ) -> None:
         if self.connection:
-            logger.info(f"Закрытие соединения с БД: {self.db_name}")
+            logger.info(f"Закрытие соединения с БД: {self.db_url}")
             self.connection.close()
             self.connection = None
 
 
-# Глобальные менеджеры соединений
-write_db_manager = DatabaseConnectionManager(DB_NAME, read_only=False)
-read_db_manager = DatabaseConnectionManager(DB_NAME, read_only=True)
+# Глобальный менеджер соединений, использующий DATABASE_URL из конфига
+db_manager = DatabaseConnectionManager(DATABASE_URL)

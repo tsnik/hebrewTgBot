@@ -1,0 +1,13 @@
+-- step: 1
+-- description: Revert initial PostgreSQL schema
+
+DROP INDEX IF EXISTS idx_normalized_hebrew;
+DROP INDEX IF EXISTS idx_normalized_hebrew_form;
+DROP INDEX IF EXISTS idx_translations_word_id;
+
+DROP TABLE IF EXISTS user_tense_settings;
+DROP TABLE IF EXISTS verb_conjugations;
+DROP TABLE IF EXISTS user_dictionary;
+DROP TABLE IF EXISTS translations;
+DROP TABLE IF EXISTS cached_words;
+DROP TABLE IF EXISTS users;

@@ -195,7 +195,7 @@ async def test_fetch_and_cache_word_data_not_found(monkeypatch):
     )
 
     mock_uow = MagicMock()
-    monkeypatch.setattr("app.services.parser.UnitOfWork", lambda: mock_uow)
+    monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
 
     status, data = await fetch_and_cache_word_data(search_word)
 
@@ -212,7 +212,7 @@ async def test_fetch_and_cache_word_data_network_error(monkeypatch):
     respx.get(mock_url).mock(side_effect=httpx.RequestError("mock error"))
 
     mock_uow = MagicMock()
-    monkeypatch.setattr("app.services.parser.UnitOfWork", lambda: mock_uow)
+    monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
 
     status, data = await fetch_and_cache_word_data(search_word)
 
@@ -233,7 +233,7 @@ async def test_fetch_and_cache_word_data_invalid_page(monkeypatch):
     )
 
     mock_uow = MagicMock()
-    monkeypatch.setattr("app.services.parser.UnitOfWork", lambda: mock_uow)
+    monkeypatch.setattr("services.parser.UnitOfWork", lambda: mock_uow)
 
     status, data = await fetch_and_cache_word_data(search_word)
 
