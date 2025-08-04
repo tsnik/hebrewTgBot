@@ -229,7 +229,11 @@ async def fetch_and_cache_word_data(search_word: str) -> Tuple[str, List[Dict]]:
                 existing_words = uow.words.find_words_by_normalized_form(
                     word_data.normalized_hebrew
                 )
-                is_duplicate = any(w.hebrew == word_data.hebrew for w in existing_words)
+                is_duplicate = any(
+                    w.hebrew == word_data.hebrew
+                    and w.part_of_speech == word_data.part_of_speech
+                    for w in existing_words
+                )
 
                 if not is_duplicate:
                     word_id = uow.words.create_cached_word(word_data)
