@@ -1,10 +1,10 @@
 # Имя рабочего процесса
 name: Build and Push to DigitalOcean
 
-# Триггер для запуска: пуш в ветку "main"
+# Триггер для запуска: пуш в ветку "master"
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
 
 jobs:
   build_and_push:
