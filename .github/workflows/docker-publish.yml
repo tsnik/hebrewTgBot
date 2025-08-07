@@ -35,4 +35,4 @@ jobs:
           # Теги для образа с полным путем к репозиторию
           tags: |
             ${{ secrets.DO_REGISTRY_URL }}/hebrewtgbot:latest
-            ${{ secrets.DO_REGISTRY_URL }}/hebretgbot:${{ github.sha }}
+            ${{ secrets.DO_REGISTRY_URL }}/hebrewtgbot:${{ github.sha }}
